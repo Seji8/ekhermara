@@ -10,6 +10,13 @@ public class UpdateUserRequest {
     private Role role;
     private Long equipeId;
 
+    // Champs manquants
+    private String telephone;
+    private String adresse;
+    private String ville;
+    private String matricule;
+
+    // Getters et Setters
     public String getNom() {
         return nom;
     }
@@ -49,5 +56,36 @@ public class UpdateUserRequest {
     public void setEquipeId(Long equipeId) {
         this.equipeId = equipeId;
     }
-}
 
+    public String getTelephone() {
+        return telephone;
+    }
+
+    public void setTelephone(String telephone) {
+        this.telephone = telephone;
+    }
+
+    public String getAdresse() {
+        return adresse;
+    }
+
+    public void setAdresse(String adresse) {
+        this.adresse = adresse;
+    }
+
+    public String getVille() {
+        return ville;
+    }
+
+    public void setVille(String ville) {
+        this.ville = ville;
+    }
+
+    public String getMatricule() {
+        return matricule;
+    }
+
+    public void setMatricule(String matricule) {
+        this.matricule = matricule;
+    }
+}

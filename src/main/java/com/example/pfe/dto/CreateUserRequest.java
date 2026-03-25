@@ -6,18 +6,18 @@ public class CreateUserRequest {
     private String nom;
     private String email;
     private Role role;
+    private Long equipeId; // ID de l'équipe
 
+    // Informations supplémentaires
+    private String telephone;
+    private String adresse;
+    private String ville;
+    private String matricule;
 
-
+    // Constructeurs
     public CreateUserRequest() {}
 
-    public CreateUserRequest(String nom, String email, Role role) {
-        this.nom = nom;
-        this.email = email;
-        this.role = role;
-    }
-
-    // Getters and Setters
+    // Getters et Setters
     public String getNom() {
         return nom;
     }
@@ -40,5 +40,45 @@ public class CreateUserRequest {
 
     public void setRole(Role role) {
         this.role = role;
+    }
+
+    public Long getEquipeId() {
+        return equipeId;
+    }
+
+    public void setEquipeId(Long equipeId) {
+        this.equipeId = equipeId;
+    }
+
+    public String getTelephone() {
+        return telephone;
+    }
+
+    public void setTelephone(String telephone) {
+        this.telephone = telephone;
+    }
+
+    public String getAdresse() {
+        return adresse;
+    }
+
+    public void setAdresse(String adresse) {
+        this.adresse = adresse;
+    }
+
+    public String getVille() {
+        return ville;
+    }
+
+    public void setVille(String ville) {
+        this.ville = ville;
+    }
+
+    public String getMatricule() {
+        return matricule;
+    }
+
+    public void setMatricule(String matricule) {
+        this.matricule = matricule;
     }
 }

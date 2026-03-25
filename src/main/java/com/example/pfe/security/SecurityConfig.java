@@ -33,18 +33,18 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
-                    // URLs publiques
-                    auth.anyRequest().permitAll();
-                   /* auth.requestMatchers("/auth/**").permitAll();
 
-                    // URLs pour les demandes - ACCESSIBLE À TOUS LES UTILISATEURS CONNECTÉS
+                    auth.requestMatchers("/auth/**").permitAll();
+
+                    // 2. Ensuite les URLs avec restrictions spécifiques
                     auth.requestMatchers("/api/requests/**").authenticated();
 
-                    // URLs admin seulement
-                    auth.requestMatchers("/users/**").hasRole("ADMIN");
+                    // 3. URLs admin seulement
+                    auth.requestMatchers("/api/users/**").hasAnyRole("ADMIN", "CHEF_EQUIPE");
 
-                    // Toutes les autres URLs nécessitent une authentification
-                    auth.anyRequest().authenticated();*/
+                    // 4. Enfin, TOUTES les autres URLs nécessitent une authentification
+                    //    ⚠️ Un seul anyRequest() à la fin !
+                    auth.anyRequest().authenticated();
                 })
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
