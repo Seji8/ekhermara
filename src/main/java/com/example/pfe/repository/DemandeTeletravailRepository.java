@@ -13,4 +13,6 @@ public interface DemandeTeletravailRepository extends JpaRepository<DemandeTelet
     List<DemandeTeletravail> findByStatut(StatutDemande statut);
     List<DemandeTeletravail> findByUtilisateurId(Long userId);
     List<DemandeTeletravail> findByValidateurId(Long validateurId);
+    List<DemandeTeletravail> findByUtilisateurIdIn(List<Long> userIds);
+    List<DemandeTeletravail> findByEtapeValidationAndStatut(int etapeValidation, StatutDemande statut);
 }

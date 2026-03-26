@@ -5,8 +5,10 @@ import com.example.pfe.dto.DemandeTeletravailResponse;
 import com.example.pfe.models.DemandeTeletravail;
 import com.example.pfe.models.StatutDemande;
 import com.example.pfe.models.User;
+import com.example.pfe.models.Validation;
 import com.example.pfe.repository.DemandeTeletravailRepository;
 import com.example.pfe.repository.UserRepository;
+import com.example.pfe.repository.ValidationRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,14 +29,20 @@ public class DemandeTeletravailService {
 
     private final DemandeTeletravailRepository demandeRepository;
     private final UserRepository userRepository;
+    private final ValidationRepository validationRepository;
+    private final ValidationService validationService;  // ← Ajouté
 
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;
 
     public DemandeTeletravailService(DemandeTeletravailRepository demandeRepository,
-                                     UserRepository userRepository) {
+                                     UserRepository userRepository,
+                                     ValidationRepository validationRepository,
+                                     ValidationService validationService) {  // ← Ajouté
         this.demandeRepository = demandeRepository;
         this.userRepository = userRepository;
+        this.validationRepository = validationRepository;
+        this.validationService = validationService;  // ← Ajouté
     }
 
     @Transactional
@@ -50,8 +58,8 @@ public class DemandeTeletravailService {
         demande.setStatut(StatutDemande.PENDING);
         demande.setUtilisateur(utilisateur);
         demande.setDateCreation(LocalDateTime.now());
+        demande.setEtapeValidation(1);
 
-        // Gérer l'upload du fichier
         if (request.getFichier() != null && !request.getFichier().isEmpty()) {
             String fileName = saveFile(request.getFichier());
             demande.setFichierjustificatif(fileName);
@@ -66,12 +74,10 @@ public class DemandeTeletravailService {
         DemandeTeletravail demande = demandeRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Demande non trouvée"));
 
-        // Vérifier que l'utilisateur est le propriétaire
         if (!demande.getUtilisateur().getId().equals(userId)) {
             throw new RuntimeException("Vous ne pouvez modifier que vos propres demandes");
         }
 
-        // Ne peut modifier que si c'est en attente
         if (demande.getStatut() != StatutDemande.PENDING) {
             throw new RuntimeException("Vous ne pouvez modifier qu'une demande en attente");
         }
@@ -81,9 +87,7 @@ public class DemandeTeletravailService {
         demande.setDateFin(request.getDateFin());
         demande.setType(request.getType());
 
-        // Gérer l'upload du nouveau fichier
         if (request.getFichier() != null && !request.getFichier().isEmpty()) {
-            // Supprimer l'ancien fichier si existe
             if (demande.getFichierjustificatif() != null) {
                 deleteFile(demande.getFichierjustificatif());
             }
@@ -103,11 +107,10 @@ public class DemandeTeletravailService {
         User validateur = userRepository.findById(validateurId)
                 .orElseThrow(() -> new RuntimeException("Validateur non trouvé"));
 
-        demande.setStatut(StatutDemande.APPROVED);
-        demande.setValidateur(validateur);
+        validationService.ajouterValidation(id, validateur, StatutDemande.APPROVED, null);
 
-        DemandeTeletravail approvedDemande = demandeRepository.save(demande);
-        return mapToResponse(approvedDemande);
+        DemandeTeletravail updatedDemande = demandeRepository.findById(id).orElseThrow();
+        return mapToResponse(updatedDemande);
     }
 
     @Transactional
@@ -118,12 +121,29 @@ public class DemandeTeletravailService {
         User validateur = userRepository.findById(validateurId)
                 .orElseThrow(() -> new RuntimeException("Validateur non trouvé"));
 
-        demande.setStatut(StatutDemande.REJECTED);
-        demande.setValidateur(validateur);
+        validationService.ajouterValidation(id, validateur, StatutDemande.REJECTED, null);
 
-        DemandeTeletravail rejectedDemande = demandeRepository.save(demande);
-        return mapToResponse(rejectedDemande);
+        DemandeTeletravail updatedDemande = demandeRepository.findById(id).orElseThrow();
+        return mapToResponse(updatedDemande);
     }
+
+    @Transactional
+    public void deleteDemande(Long id, Long userId) {
+        DemandeTeletravail demande = demandeRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Demande non trouvée"));
+
+        if (!demande.getUtilisateur().getId().equals(userId)) {
+            throw new RuntimeException("Vous ne pouvez supprimer que vos propres demandes");
+        }
+
+        if (demande.getFichierjustificatif() != null) {
+            deleteFile(demande.getFichierjustificatif());
+        }
+
+        demandeRepository.delete(demande);
+    }
+
+    // ==================== MÉTHODES DE RECHERCHE ====================
 
     public List<DemandeTeletravailResponse> getAllDemandes() {
         return demandeRepository.findAll().stream()
@@ -143,40 +163,154 @@ public class DemandeTeletravailService {
         return mapToResponse(demande);
     }
 
-    @Transactional
-    public void deleteDemande(Long id, Long userId) {
-        DemandeTeletravail demande = demandeRepository.findById(id)
+    public DemandeTeletravail getDemandeEntityById(Long id) {
+        return demandeRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Demande non trouvée"));
-
-        // Vérifier que l'utilisateur est le propriétaire
-        if (!demande.getUtilisateur().getId().equals(userId)) {
-            throw new RuntimeException("Vous ne pouvez supprimer que vos propres demandes");
-        }
-
-        // Supprimer le fichier associé
-        if (demande.getFichierjustificatif() != null) {
-            deleteFile(demande.getFichierjustificatif());
-        }
-
-        demandeRepository.delete(demande);
     }
+
+    public List<DemandeTeletravailResponse> getDemandesByEquipe(Long equipeId) {
+        List<User> membres = userRepository.findByEquipeId(equipeId);
+        if (membres == null || membres.isEmpty()) {
+            return List.of();
+        }
+        List<Long> userIds = membres.stream()
+                .map(User::getId)
+                .collect(Collectors.toList());
+        return demandeRepository.findByUtilisateurIdIn(userIds).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<DemandeTeletravailResponse> getDemandesByEtapeValidation(int etape) {
+        return demandeRepository.findByEtapeValidationAndStatut(etape, StatutDemande.PENDING).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    // ==================== MÉTHODES POUR LE SUIVI ====================
+
+    public DemandeTeletravailResponse getDemandeDetail(Long id) {
+        DemandeTeletravail demande = getDemandeEntityById(id);
+        return mapToDetailResponse(demande);
+    }
+
+    private DemandeTeletravailResponse mapToDetailResponse(DemandeTeletravail demande) {
+        DemandeTeletravailResponse response = new DemandeTeletravailResponse();
+
+        response.setId(demande.getId());
+        response.setMotif(demande.getMotif());
+        response.setDateDebut(demande.getDateDebut());
+        response.setDateFin(demande.getDateFin());
+        response.setType(demande.getType());
+        response.setStatut(demande.getStatut());
+        response.setFichierjustificatif(demande.getFichierjustificatif());
+        response.setDateCreation(demande.getDateCreation());
+        response.setDuree(demande.getDuree());
+
+        if (demande.getUtilisateur() != null) {
+            User user = demande.getUtilisateur();
+            response.setUtilisateurId(user.getId());
+            response.setUtilisateurNom(user.getNom());
+            response.setUtilisateurEmail(user.getEmail());
+            response.setUtilisateurRole(user.getRole().name());
+            if (user.getEquipe() != null) {
+                response.setUtilisateurEquipe(user.getEquipe().getNom());
+            }
+        }
+
+        if (demande.getValidateur() != null) {
+            response.setValidateurNom(demande.getValidateur().getNom());
+        }
+
+        response.setEtapeValidation(demande.getEtapeValidation());
+        response.setProchainValidateur(getProchainValidateur(demande.getEtapeValidation()));
+
+        if (demande.getValidations() != null && !demande.getValidations().isEmpty()) {
+            List<DemandeTeletravailResponse.ValidationResponse> historique = demande.getValidations().stream()
+                    .map(this::mapToValidationResponse)
+                    .collect(Collectors.toList());
+            response.setHistoriqueValidations(historique);
+        }
+
+        return response;
+    }
+
+    private DemandeTeletravailResponse.ValidationResponse mapToValidationResponse(Validation validation) {
+        DemandeTeletravailResponse.ValidationResponse response = new DemandeTeletravailResponse.ValidationResponse();
+        response.setId(validation.getId());
+        response.setStatut(validation.getStatut().name());
+        response.setCommentaire(validation.getCommentaire());
+        response.setDateValidation(validation.getDateValidation());
+        response.setEtapeValidation(validation.getEtape());
+
+        if (validation.getValidateur() != null) {
+            response.setValidateurNom(validation.getValidateur().getNom());
+            response.setValidateurRole(validation.getValidateur().getRole().name());
+        }
+
+        return response;
+    }
+
+    private String getProchainValidateur(int etapeValidation) {
+        switch (etapeValidation) {
+            case 1:
+                return "Chef d'équipe";
+            case 2:
+                return "Administrateur";  // ← Modifié
+            default:
+                return "Validation terminée";
+        }
+    }
+
+    // ==================== MÉTHODES DE MAPPING ====================
+
+    private DemandeTeletravailResponse mapToResponse(DemandeTeletravail demande) {
+        DemandeTeletravailResponse response = new DemandeTeletravailResponse();
+        response.setId(demande.getId());
+        response.setMotif(demande.getMotif());
+        response.setDateDebut(demande.getDateDebut());
+        response.setDateFin(demande.getDateFin());
+        response.setType(demande.getType());
+        response.setStatut(demande.getStatut());
+        response.setFichierjustificatif(demande.getFichierjustificatif());
+
+        if (demande.getUtilisateur() != null) {
+            User user = demande.getUtilisateur();
+            response.setUtilisateurId(user.getId());
+            response.setUtilisateurNom(user.getNom());
+            response.setUtilisateurEmail(user.getEmail());
+            if (user.getRole() != null) {
+                response.setUtilisateurRole(user.getRole().name());
+            }
+            if (user.getEquipe() != null) {
+                response.setUtilisateurEquipe(user.getEquipe().getNom());
+            }
+        }
+
+        if (demande.getValidateur() != null) {
+            response.setValidateurNom(demande.getValidateur().getNom());
+        }
+
+        response.setDateCreation(demande.getDateCreation());
+        response.setDuree(demande.getDuree());
+        response.setEtapeValidation(demande.getEtapeValidation());
+
+        return response;
+    }
+
+    // ==================== MÉTHODES UTILITAIRES ====================
 
     private String saveFile(MultipartFile file) {
         try {
-            // Créer le répertoire d'upload s'il n'existe pas
             Path uploadPath = Paths.get(uploadDir);
             if (!Files.exists(uploadPath)) {
                 Files.createDirectories(uploadPath);
             }
 
-            // Vérifier le type de fichier
             String originalFileName = file.getOriginalFilename();
             String fileExtension = originalFileName.substring(originalFileName.lastIndexOf("."));
-
-            // Générer un nom de fichier unique
             String fileName = UUID.randomUUID().toString() + fileExtension;
 
-            // Sauvegarder le fichier
             Path filePath = uploadPath.resolve(fileName);
             Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
@@ -193,27 +327,5 @@ public class DemandeTeletravailService {
         } catch (IOException e) {
             throw new RuntimeException("Erreur lors de la suppression du fichier: " + e.getMessage());
         }
-    }
-
-    private DemandeTeletravailResponse mapToResponse(DemandeTeletravail demande) {
-        DemandeTeletravailResponse response = new DemandeTeletravailResponse();
-        response.setId(demande.getId());
-        response.setMotif(demande.getMotif());
-        response.setDateDebut(demande.getDateDebut());
-        response.setDateFin(demande.getDateFin());
-        response.setType(demande.getType());
-        response.setStatut(demande.getStatut());
-        response.setFichierjustificatif(demande.getFichierjustificatif());
-        response.setUtilisateurId(demande.getUtilisateur().getId());
-        response.setUtilisateurNom(demande.getUtilisateur().getNom());
-
-        if (demande.getValidateur() != null) {
-            response.setValidateurNom(demande.getValidateur().getNom());
-        }
-
-        response.setDateCreation(demande.getDateCreation());
-        response.setDuree(demande.getDuree());
-
-        return response;
     }
 }

@@ -1,10 +1,18 @@
 package com.example.pfe.models;
 
 import jakarta.persistence.*;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "demandes_teletravail")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class DemandeTeletravail {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,96 +45,14 @@ public class DemandeTeletravail {
     @Enumerated(EnumType.STRING)
     private StatutDemande statut;
 
-    public DemandeTeletravail() {
+    @OneToMany(mappedBy = "demande", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Validation> validations = new ArrayList<>();
+
+    private int etapeValidation = 1;
+
+    @PrePersist
+    protected void onCreate() {
         this.dateCreation = LocalDateTime.now();
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getProcessInstanceId() {
-        return processInstanceId;
-    }
-
-    public void setProcessInstanceId(String processInstanceId) {
-        this.processInstanceId = processInstanceId;
-    }
-
-    public String getFichierjustificatif() {
-        return fichierjustificatif;
-    }
-
-    public void setFichierjustificatif(String fichierjustificatif) {
-        this.fichierjustificatif = fichierjustificatif;
-    }
-
-    public String getMotif() {
-        return motif;
-    }
-
-    public void setMotif(String motif) {
-        this.motif = motif;
-    }
-
-    public LocalDateTime getDateCreation() {
-        return dateCreation;
-    }
-
-    public void setDateCreation(LocalDateTime dateCreation) {
-        this.dateCreation = dateCreation;
-    }
-
-    public LocalDateTime getDateDebut() {
-        return dateDebut;
-    }
-
-    public void setDateDebut(LocalDateTime dateDebut) {
-        this.dateDebut = dateDebut;
-    }
-
-    public LocalDateTime getDateFin() {
-        return dateFin;
-    }
-
-    public void setDateFin(LocalDateTime dateFin) {
-        this.dateFin = dateFin;
-    }
-
-    public User getUtilisateur() {
-        return utilisateur;
-    }
-
-    public void setUtilisateur(User utilisateur) {
-        this.utilisateur = utilisateur;
-    }
-
-    public User getValidateur() {
-        return validateur;
-    }
-
-    public void setValidateur(User validateur) {
-        this.validateur = validateur;
-    }
-
-    public TypeDemande getType() {
-        return type;
-    }
-
-    public void setType(TypeDemande type) {
-        this.type = type;
-    }
-
-    public StatutDemande getStatut() {
-        return statut;
-    }
-
-    public void setStatut(StatutDemande statut) {
-        this.statut = statut;
     }
 
     public int getDuree() {
@@ -134,5 +60,20 @@ public class DemandeTeletravail {
             return (int) java.time.temporal.ChronoUnit.DAYS.between(dateDebut, dateFin);
         }
         return 0;
+    }
+
+    public Validation getLastValidation() {
+        if (validations.isEmpty()) {
+            return null;
+        }
+        return validations.get(validations.size() - 1);
+    }
+
+    public String getProchainValidateur() {
+        switch (etapeValidation) {
+            case 1: return "Chef d'équipe";
+            case 2: return "Administrateur";  // ← Change ici aussi
+            default: return "Validation terminée";
+        }
     }
 }

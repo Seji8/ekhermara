@@ -2,8 +2,16 @@ package com.example.pfe.dto;
 
 import com.example.pfe.models.StatutDemande;
 import com.example.pfe.models.TypeDemande;
-import java.time.LocalDateTime;
+import lombok.Data;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class DemandeTeletravailResponse {
     private Long id;
     private String motif;
@@ -14,107 +22,52 @@ public class DemandeTeletravailResponse {
     private String fichierjustificatif;
     private String utilisateurNom;
     private Long utilisateurId;
+    private String utilisateurEmail;
+    private String utilisateurRole;
+    private String utilisateurEquipe;
     private String validateurNom;
     private LocalDateTime dateCreation;
     private int duree;
 
-    // Constructeurs
-    public DemandeTeletravailResponse() {}
+    // Champs pour le suivi
+    private int etapeValidation;
+    private List<ValidationResponse> historiqueValidations;
+    private String prochainValidateur;
 
-    // Getters et Setters
-    public Long getId() {
-        return id;
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ValidationResponse {
+        private Long id;
+        private String validateurNom;
+        private String validateurRole;
+        private String statut;
+        private String commentaire;
+        private LocalDateTime dateValidation;
+        private int etapeValidation;
+        private String prochainValidateur;
     }
+    // Dans DemandeTeletravailResponse
+    public String getProchainValidateur() {
+        if (statut == StatutDemande.APPROVED) {
+            return "Validation terminée";
+        }
+        if (statut == StatutDemande.REJECTED) {
+            return "Demande rejetée";
+        }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+        boolean chefApproved = historiqueValidations != null && historiqueValidations.stream()
+                .anyMatch(v -> v.getValidateurRole().equals("CHEF_EQUIPE") && v.getStatut().equals("APPROVED"));
+        boolean adminApproved = historiqueValidations != null && historiqueValidations.stream()
+                .anyMatch(v -> v.getValidateurRole().equals("ADMIN") && v.getStatut().equals("APPROVED"));
 
-    public String getMotif() {
-        return motif;
-    }
-
-    public void setMotif(String motif) {
-        this.motif = motif;
-    }
-
-    public LocalDateTime getDateDebut() {
-        return dateDebut;
-    }
-
-    public void setDateDebut(LocalDateTime dateDebut) {
-        this.dateDebut = dateDebut;
-    }
-
-    public LocalDateTime getDateFin() {
-        return dateFin;
-    }
-
-    public void setDateFin(LocalDateTime dateFin) {
-        this.dateFin = dateFin;
-    }
-
-    public TypeDemande getType() {
-        return type;
-    }
-
-    public void setType(TypeDemande type) {
-        this.type = type;
-    }
-
-    public StatutDemande getStatut() {
-        return statut;
-    }
-
-    public void setStatut(StatutDemande statut) {
-        this.statut = statut;
-    }
-
-    public String getFichierjustificatif() {
-        return fichierjustificatif;
-    }
-
-    public void setFichierjustificatif(String fichierjustificatif) {
-        this.fichierjustificatif = fichierjustificatif;
-    }
-
-    public String getUtilisateurNom() {
-        return utilisateurNom;
-    }
-
-    public void setUtilisateurNom(String utilisateurNom) {
-        this.utilisateurNom = utilisateurNom;
-    }
-
-    public Long getUtilisateurId() {
-        return utilisateurId;
-    }
-
-    public void setUtilisateurId(Long utilisateurId) {
-        this.utilisateurId = utilisateurId;
-    }
-
-    public String getValidateurNom() {
-        return validateurNom;
-    }
-
-    public void setValidateurNom(String validateurNom) {
-        this.validateurNom = validateurNom;
-    }
-
-    public LocalDateTime getDateCreation() {
-        return dateCreation;
-    }
-
-    public void setDateCreation(LocalDateTime dateCreation) {
-        this.dateCreation = dateCreation;
-    }
-
-    public int getDuree() {
-        return duree;
-    }
-
-    public void setDuree(int duree) {
-        this.duree = duree;
+        if (!chefApproved && !adminApproved) {
+            return "Chef d'équipe ou Administrateur";
+        } else if (!chefApproved) {
+            return "Chef d'équipe";
+        } else if (!adminApproved) {
+            return "Administrateur";
+        }
+        return "Validation terminée";
     }
 }
