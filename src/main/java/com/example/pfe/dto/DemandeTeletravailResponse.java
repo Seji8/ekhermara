@@ -34,6 +34,9 @@ public class DemandeTeletravailResponse {
     private List<ValidationResponse> historiqueValidations;
     private String prochainValidateur;
 
+    public void setProcessInstanceId(String processInstanceId) {
+    }
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

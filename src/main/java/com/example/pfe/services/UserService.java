@@ -348,4 +348,9 @@ public class UserService {
         return equipeRepository.findByChef(chef)
                 .orElseThrow(() -> new RuntimeException("Aucune équipe trouvée pour ce chef"));
     }
+
+    public User findByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé avec l'email: " + email));
+    }
 }

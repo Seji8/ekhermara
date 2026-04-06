@@ -33,17 +33,13 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
-
                     auth.requestMatchers("/auth/**").permitAll();
+                    auth.requestMatchers("/camunda/**", "/engine-rest/**").permitAll();
 
-                    // 2. Ensuite les URLs avec restrictions spécifiques
-                    auth.requestMatchers("/api/requests/**").authenticated();
+                    // ✅ CORRECTION : Utiliser hasAuthority avec le nom exact (avec ROLE_)
+                    auth.requestMatchers("/api/camunda/**").permitAll();
+                    auth.requestMatchers("/api/users/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_CHEF_EQUIPE");
 
-                    // 3. URLs admin seulement
-                    auth.requestMatchers("/api/users/**").hasAnyRole("ADMIN", "CHEF_EQUIPE");
-
-                    // 4. Enfin, TOUTES les autres URLs nécessitent une authentification
-                    //    ⚠️ Un seul anyRequest() à la fin !
                     auth.anyRequest().authenticated();
                 })
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

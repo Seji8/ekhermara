@@ -6,14 +6,19 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
@@ -63,15 +68,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         System.out.println("Role from token: " + role);
                         System.out.println("Creating auth with ROLE_" + role);
 
+                        // ✅ FIX: Use email string as principal, not the User object
                         UsernamePasswordAuthenticationToken authToken =
                                 new UsernamePasswordAuthenticationToken(
-                                        user,
+                                        email,  // ✅ Changed: use email String instead of user object
                                         null,
                                         List.of(new SimpleGrantedAuthority("ROLE_" + role))
                                 );
 
                         SecurityContextHolder.getContext().setAuthentication(authToken);
-                        System.out.println("Authentication set in context");
+                        System.out.println("Authentication set in context for: " + email);
                         System.out.println("Authorities: " + authToken.getAuthorities());
                     } else {
                         System.out.println("Token validation failed");
@@ -88,4 +94,5 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         }
     }
+
 }

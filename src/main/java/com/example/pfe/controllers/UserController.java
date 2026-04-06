@@ -41,16 +41,23 @@ public class UserController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'CHEF_EQUIPE')")
-    public ResponseEntity<?> getAllUsers(@AuthenticationPrincipal User currentUser) {
+    public ResponseEntity<?> getAllUsers(@AuthenticationPrincipal String email) {
         System.out.println("=== UserController.getAllUsers ===");
-        System.out.println("currentUser: " + (currentUser != null ? currentUser.getEmail() : "null"));
+        System.out.println("Email: " + email);
 
-        if (currentUser == null) {
+        if (email == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("Utilisateur non authentifié");
         }
 
         try {
+            // Récupérer l'utilisateur à partir de l'email
+            User currentUser = userService.findByEmail(email);
+            if (currentUser == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body("Utilisateur non trouvé");
+            }
+
             List<CreateUserResponse> users = userService.getUsersByRole(currentUser);
             System.out.println("Nombre d'utilisateurs retournés: " + users.size());
             return ResponseEntity.ok(users);
@@ -62,19 +69,26 @@ public class UserController {
     }
 
     @GetMapping("/my-team")
-    @PreAuthorize("hasAuthority('ROLE_CHEF_EQUIPE')")
-    public ResponseEntity<?> getMyTeam(@AuthenticationPrincipal User currentUser) {
-        if (currentUser == null) {
+    @PreAuthorize("hasRole('CHEF_EQUIPE')")
+    public ResponseEntity<?> getMyTeam(@AuthenticationPrincipal String email) {
+        if (email == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("User not authenticated");
         }
 
         try {
+            User currentUser = userService.findByEmail(email);
+            if (currentUser == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body("User not found");
+            }
+
             Equipe equipe = userService.getEquipeForChef(currentUser);
             List<User> members = equipe.getMembres();
 
-
-             members = members.stream().filter(m -> !m.getId().equals(currentUser.getId())).collect(Collectors.toList());
+            members = members.stream()
+                    .filter(m -> !m.getId().equals(currentUser.getId()))
+                    .collect(Collectors.toList());
 
             return ResponseEntity.ok(members);
         } catch (RuntimeException e) {
@@ -84,16 +98,22 @@ public class UserController {
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'CHEF_EQUIPE')")
-    public ResponseEntity<?> getUserById(@PathVariable Long id, @AuthenticationPrincipal User currentUser) {
+    public ResponseEntity<?> getUserById(@PathVariable Long id, @AuthenticationPrincipal String email) {
         System.out.println("=== UserController.getUserById ===");
-        System.out.println("currentUser: " + (currentUser != null ? currentUser.getEmail() : "null"));
+        System.out.println("Email: " + email);
 
-        if (currentUser == null) {
+        if (email == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("Utilisateur non authentifié");
         }
 
         try {
+            User currentUser = userService.findByEmail(email);
+            if (currentUser == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body("Utilisateur non trouvé");
+            }
+
             CreateUserResponse user = userService.getUserById(id);
 
             if (currentUser.estChef()) {
