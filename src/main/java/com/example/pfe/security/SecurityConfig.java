@@ -39,7 +39,7 @@ public class SecurityConfig {
                     // ✅ CORRECTION : Utiliser hasAuthority avec le nom exact (avec ROLE_)
                     auth.requestMatchers("/api/camunda/**").permitAll();
                     auth.requestMatchers("/api/users/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_CHEF_EQUIPE");
-
+                    auth.requestMatchers("/api/camunda/download/**").authenticated();
                     auth.anyRequest().authenticated();
                 })
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

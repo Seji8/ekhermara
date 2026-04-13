@@ -1,4 +1,4 @@
-// CamundaController.java - Version corrigée
+// CamundaController.java - Version complète et corrigée
 package com.example.pfe.controllers;
 
 import com.example.pfe.dto.DemandeTeletravailRequest;
@@ -9,6 +9,9 @@ import com.example.pfe.models.User;
 import com.example.pfe.repository.UserRepository;
 import com.example.pfe.services.CamundaProcessService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,6 +22,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import com.example.pfe.services.DemandeTeletravailService;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +38,7 @@ public class CamundaController {
 
     @Autowired
     private UserRepository userRepository;
+
     @Autowired
     private DemandeTeletravailService demandeService;
 
@@ -75,7 +81,6 @@ public class CamundaController {
         System.out.println("=== getMyDemandes CALLED ===");
         System.out.println("Current user from @AuthenticationPrincipal: " + (currentUser != null ? currentUser.getEmail() : "null"));
 
-        // Alternative: récupérer du contexte
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         System.out.println("Auth from context: " + (auth != null ? auth.getName() : "null"));
         System.out.println("Auth authorities: " + (auth != null ? auth.getAuthorities() : "null"));
@@ -109,7 +114,6 @@ public class CamundaController {
             System.out.println("=== getSuiviDemande ===");
             System.out.println("Demande ID: " + id);
 
-            // ✅ Récupérer l'utilisateur du contexte de sécurité
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth == null || !auth.isAuthenticated()) {
                 System.out.println("❌ Non authentifié");
@@ -124,17 +128,14 @@ public class CamundaController {
 
             System.out.println("User found: " + currentUser.getEmail() + ", role: " + currentUser.getRole());
 
-            // Récupérer la demande
             DemandeTeletravail demande = demandeService.getDemandeEntityById(id);
 
-            // Vérifier les droits : ADMIN a toujours accès
             if (currentUser.estAdmin()) {
                 System.out.println("✅ Admin - Accès autorisé");
                 DemandeTeletravailResponse detail = demandeService.getDemandeDetail(id);
                 return ResponseEntity.ok(detail);
             }
 
-            // Vérifier les autres droits
             boolean hasAccess = currentUser.estRH() ||
                     demande.getUtilisateur().getId().equals(currentUser.getId()) ||
                     (currentUser.estChef() && currentUser.getEquipe() != null &&
@@ -155,12 +156,13 @@ public class CamundaController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erreur: " + e.getMessage());
         }
     }
-    // Ajoutez cette méthode
+
     @GetMapping("/test")
     public ResponseEntity<String> test() {
         System.out.println("=== TEST ENDPOINT CALLED ===");
         return ResponseEntity.ok("API Camunda fonctionne!");
     }
+
     @DeleteMapping("/demandes/{id}")
     @PreAuthorize("hasAnyRole('EMPLOYE', 'ADMIN')")
     public ResponseEntity<?> annulerDemande(@PathVariable Long id,
@@ -175,12 +177,10 @@ public class CamundaController {
 
     // ==================== TÂCHES CAMUNDA ====================
 
-    // ✅ CORRECTION : Méthode getChefTasks avec l'annotation @GetMapping
     @GetMapping("/taches/chef")
     public ResponseEntity<List<TaskDto>> getChefTasks() {
         System.out.println("=== getChefTasks ===");
 
-        // Récupérer l'utilisateur du contexte
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
@@ -189,7 +189,6 @@ public class CamundaController {
         String email = auth.getName();
         System.out.println("Email: " + email);
 
-        // Déléguer au service
         List<TaskDto> tasks = camundaService.getChefTasks(email);
         System.out.println("Tâches trouvées: " + tasks.size());
 
@@ -239,5 +238,26 @@ public class CamundaController {
     @PreAuthorize("hasAnyRole('EMPLOYE', 'CHEF_EQUIPE', 'RH', 'ADMIN')")
     public ResponseEntity<Map<String, Object>> getStatistiques(@AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(camundaService.getStatistiques(currentUser));
+    }
+
+    // ==================== TÉLÉCHARGEMENT DE FICHIERS ====================
+
+    @GetMapping("/download/{filename}")
+    @PreAuthorize("hasAnyRole('EMPLOYE', 'CHEF_EQUIPE', 'RH', 'ADMIN')")
+    public ResponseEntity<Resource> downloadFile(@PathVariable String filename) {
+        try {
+            Path filePath = Paths.get("uploads/" + filename);
+            Resource resource = new UrlResource(filePath.toUri());
+
+            if (resource.exists() && resource.isReadable()) {
+                return ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                        .body(resource);
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }
