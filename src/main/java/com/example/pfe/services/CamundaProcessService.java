@@ -24,32 +24,19 @@ import java.util.stream.Collectors;
 @Transactional
 public class CamundaProcessService {
 
-    @Autowired
-    private RuntimeService runtimeService;
-
-    @Autowired
-    private TaskService taskService;
-
-    @Autowired
-    private HistoryService historyService;
-
-    @Autowired
-    private DemandeTeletravailRepository demandeRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private FileStorageService fileStorageService;
+    @Autowired private RuntimeService runtimeService;
+    @Autowired private TaskService taskService;
+    @Autowired private HistoryService historyService;
+    @Autowired private DemandeTeletravailRepository demandeRepository;
+    @Autowired private UserRepository userRepository;
+    @Autowired private FileStorageService fileStorageService;
+    @Autowired private WebSocketNotificationService notificationService;
 
     // ==================== DEMANDES ====================
 
-    // Créer une demande et démarrer le processus Camunda
     public Map<String, Object> createDemandeWithProcess(String motif, String dateDebut,
                                                         String dateFin, String type,
                                                         MultipartFile fichier, User employe) {
-
-        // 1. Sauvegarder la demande en base
         DemandeTeletravail demande = new DemandeTeletravail();
         demande.setMotif(motif);
         demande.setDateDebut(LocalDateTime.parse(dateDebut));
@@ -66,7 +53,6 @@ public class CamundaProcessService {
 
         DemandeTeletravail savedDemande = demandeRepository.save(demande);
 
-        // 2. Démarrer le processus Camunda
         Map<String, Object> variables = new HashMap<>();
         variables.put("demandeId", savedDemande.getId());
         variables.put("motif", motif);
@@ -77,23 +63,23 @@ public class CamundaProcessService {
         variables.put("chefApprouve", false);
         variables.put("adminApprouve", false);
 
-        // Récupérer le chef d'équipe
         String chefEmail = getChefEmail(employe);
         variables.put("chefEmail", chefEmail);
         variables.put("adminEmail", "admin@siga.com");
 
         ProcessInstance processInstance = runtimeService
-                .startProcessInstanceByKey("validation-teletravail", variables);
+                .startProcessInstanceByKey("validation-teletravail-v2", variables);
 
-        // 3. Mettre à jour la demande avec l'ID du processus
         savedDemande.setProcessInstanceId(processInstance.getId());
         demandeRepository.save(savedDemande);
+
+        // ✅ Notifier chef + admin + RH
+        notificationService.notifierNouvelleDemande(savedDemande, employe);
 
         Map<String, Object> result = new HashMap<>();
         result.put("demande", mapToResponse(savedDemande));
         result.put("processInstanceId", processInstance.getId());
         result.put("message", "Demande créée et workflow Camunda démarré");
-
         return result;
     }
 
@@ -104,7 +90,6 @@ public class CamundaProcessService {
         return "admin@siga.com";
     }
 
-    // Récupérer les demandes par utilisateur
     public List<DemandeTeletravailResponse> getDemandesByUser(User user) {
         List<DemandeTeletravail> demandes;
 
@@ -122,25 +107,21 @@ public class CamundaProcessService {
                 .collect(Collectors.toList());
     }
 
-    // Récupérer toutes les demandes
     public List<DemandeTeletravailResponse> getAllDemandes() {
         return demandeRepository.findAll().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
 
-    // Suivi d'une demande
     public Map<String, Object> getSuiviDemande(Long demandeId, User currentUser) {
         DemandeTeletravail demande = demandeRepository.findById(demandeId)
                 .orElseThrow(() -> new RuntimeException("Demande non trouvée"));
 
-        // Vérifier les droits
         checkAccess(demande, currentUser);
 
         Map<String, Object> suivi = new HashMap<>();
         suivi.put("demande", mapToResponse(demande));
 
-        // Récupérer l'état du processus Camunda
         if (demande.getProcessInstanceId() != null) {
             List<HistoricActivityInstance> historique = historyService
                     .createHistoricActivityInstanceQuery()
@@ -155,12 +136,12 @@ public class CamundaProcessService {
         return suivi;
     }
 
-    // Annuler une demande
     public void annulerDemande(Long demandeId, User currentUser) {
         DemandeTeletravail demande = demandeRepository.findById(demandeId)
                 .orElseThrow(() -> new RuntimeException("Demande non trouvée"));
 
-        if (!demande.getUtilisateur().getId().equals(currentUser.getId()) && !currentUser.estAdmin()) {
+        if (!demande.getUtilisateur().getId().equals(currentUser.getId())
+                && !currentUser.estAdmin()) {
             throw new RuntimeException("Vous ne pouvez annuler que vos propres demandes");
         }
 
@@ -168,131 +149,186 @@ public class CamundaProcessService {
             throw new RuntimeException("Seules les demandes en attente peuvent être annulées");
         }
 
-
-        demandeRepository.save(demande);
-
-        // Supprimer le processus Camunda si existe
         if (demande.getProcessInstanceId() != null) {
-            runtimeService.deleteProcessInstance(demande.getProcessInstanceId(), "Annulée par l'utilisateur");
+            try {
+                runtimeService.deleteProcessInstance(
+                        demande.getProcessInstanceId(), "Annulée par l'utilisateur");
+            } catch (Exception e) {
+                System.err.println("⚠️ Processus Camunda introuvable: " + e.getMessage());
+            }
         }
+
+        demandeRepository.delete(demande);
     }
 
     // ==================== TÂCHES CAMUNDA ====================
 
-    // Récupérer les tâches du chef
-    // Ajoutez cette méthode si elle n'existe pas
     public List<TaskDto> getChefTasks(String chefEmail) {
         System.out.println("🔍 Recherche tâches pour chef: " + chefEmail);
 
-        // Récupérer TOUTES les tâches ChefValidation
         List<Task> tasks = taskService.createTaskQuery()
                 .taskDefinitionKey("ChefValidation")
                 .list();
 
         System.out.println("📋 Tâches ChefValidation trouvées: " + tasks.size());
 
-        return tasks.stream()
-                .map(task -> {
-                    TaskDto dto = new TaskDto(task);
-                    try {
-                        Map<String, Object> variables = runtimeService.getVariables(task.getProcessInstanceId());
-                        if (variables.get("demandeId") != null) {
-                            dto.setDemandeId(((Number) variables.get("demandeId")).longValue());
+        return tasks.stream().map(task -> {
+            TaskDto dto = new TaskDto(task);
+            try {
+                Map<String, Object> variables = runtimeService
+                        .getVariables(task.getProcessInstanceId());
+                if (variables.get("demandeId") != null) {
+                    Long demandeId = ((Number) variables.get("demandeId")).longValue();
+                    dto.setDemandeId(demandeId);
+                    demandeRepository.findById(demandeId).ifPresent(demande -> {
+                        dto.setMotif(demande.getMotif());
+                        dto.setDateDebut(demande.getDateDebut() != null
+                                ? demande.getDateDebut().toString() : null);
+                        dto.setDateFin(demande.getDateFin() != null
+                                ? demande.getDateFin().toString() : null);
+                        dto.setDuree((long) demande.getDuree());
+                        if (demande.getUtilisateur() != null) {
+                            dto.setUtilisateurNom(demande.getUtilisateur().getNom());
                         }
-                        dto.setMotif((String) variables.get("motif"));
-                    } catch (Exception e) {
-                        System.err.println("Erreur: " + e.getMessage());
-                    }
-                    return dto;
-                })
-                .collect(Collectors.toList());
+                    });
+                }
+            } catch (Exception e) {
+                System.err.println("Erreur: " + e.getMessage());
+            }
+            return dto;
+        }).collect(Collectors.toList());
     }
+
     public List<TaskDto> getAdminTasks() {
         System.out.println("=== getAdminTasks ===");
 
-        // Récupérer TOUTES les tâches AdminValidation
         List<Task> tasks = taskService.createTaskQuery()
                 .taskDefinitionKey("AdminValidation")
-                .list();  // ← Pas de filtre
+                .list();
 
         System.out.println("📋 Tâches AdminValidation trouvées: " + tasks.size());
 
-        return tasks.stream()
-                .map(task -> {
-                    TaskDto dto = new TaskDto(task);
-                    try {
-                        Map<String, Object> variables = runtimeService.getVariables(task.getProcessInstanceId());
-                        if (variables.get("demandeId") != null) {
-                            dto.setDemandeId(((Number) variables.get("demandeId")).longValue());
+        return tasks.stream().map(task -> {
+            TaskDto dto = new TaskDto(task);
+            try {
+                Map<String, Object> variables = runtimeService
+                        .getVariables(task.getProcessInstanceId());
+                if (variables.get("demandeId") != null) {
+                    Long demandeId = ((Number) variables.get("demandeId")).longValue();
+                    dto.setDemandeId(demandeId);
+                    demandeRepository.findById(demandeId).ifPresent(demande -> {
+                        dto.setMotif(demande.getMotif());
+                        dto.setDateDebut(demande.getDateDebut() != null
+                                ? demande.getDateDebut().toString() : null);
+                        dto.setDateFin(demande.getDateFin() != null
+                                ? demande.getDateFin().toString() : null);
+                        dto.setDuree((long) demande.getDuree());
+                        if (demande.getUtilisateur() != null) {
+                            dto.setUtilisateurNom(demande.getUtilisateur().getNom());
                         }
-                        dto.setMotif((String) variables.get("motif"));
-                    } catch (Exception e) {
-                        System.err.println("Erreur: " + e.getMessage());
-                    }
-                    return dto;
-                })
-                .collect(Collectors.toList());
+                    });
+                }
+            } catch (Exception e) {
+                System.err.println("Erreur: " + e.getMessage());
+            }
+            return dto;
+        }).collect(Collectors.toList());
     }
 
-    // Approuver une tâche
     public void approuverTache(String taskId, User validateur, String commentaire) {
         Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        Map<String, Object> variables = new HashMap<>();
+        if (task == null) throw new RuntimeException("Tâche introuvable: " + taskId);
 
-        if (task.getTaskDefinitionKey().equals("ChefValidation")) {
-            variables.put("chefApprouve", true);
-            variables.put("chefCommentaire", commentaire);
-        } else {
-            variables.put("adminApprouve", true);
-            variables.put("adminCommentaire", commentaire);
+        String processInstanceId = task.getProcessInstanceId();
+        Long demandeId = (Long) runtimeService.getVariable(processInstanceId, "demandeId");
 
-            // Si admin approuve, la demande est finalisée
-            Long demandeId = (Long) runtimeService.getVariable(task.getProcessInstanceId(), "demandeId");
-            Optional<DemandeTeletravail> demandeOpt = demandeRepository.findById(demandeId);
-            if (demandeOpt.isPresent()) {
-                DemandeTeletravail demande = demandeOpt.get();
-                demande.setStatut(StatutDemande.APPROVED);
-                demande.setValidateur(validateur);
-                demandeRepository.save(demande);
-            }
+        // Déjà traitée
+        Optional<DemandeTeletravail> demandeOpt = demandeRepository.findById(demandeId);
+        if (demandeOpt.isPresent() && demandeOpt.get().getStatut() != StatutDemande.PENDING) {
+            taskService.complete(taskId, Map.of("chefApprouve", true, "adminApprouve", true));
+            return;
         }
 
+        // Compléter la tâche courante
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("chefApprouve", true);
+        variables.put("adminApprouve", true);
+        if (task.getTaskDefinitionKey().equals("ChefValidation")) {
+            variables.put("chefCommentaire", commentaire != null ? commentaire : "");
+        } else {
+            variables.put("adminCommentaire", commentaire != null ? commentaire : "");
+        }
         taskService.complete(taskId, variables);
+
+        // Compléter les tâches restantes
+        taskService.createTaskQuery()
+                .processInstanceId(processInstanceId).active().list()
+                .forEach(t -> taskService.complete(t.getId(),
+                        Map.of("chefApprouve", true, "adminApprouve", true)));
+
+        // ✅ Sauvegarder statut + notifier tout le monde
+        demandeRepository.findById(demandeId).ifPresent(demande -> {
+            demande.setStatut(StatutDemande.APPROVED);
+            demande.setValidateur(validateur);
+            demandeRepository.save(demande);
+            notificationService.notifierDecision(demande, "APPROVED", commentaire);
+        });
     }
 
-    // Rejeter une tâche
     public void rejeterTache(String taskId, User validateur, String commentaire) {
         Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
+        if (task == null) throw new RuntimeException("Tâche introuvable: " + taskId);
 
-        // La demande est rejetée définitivement
-        Long demandeId = (Long) runtimeService.getVariable(task.getProcessInstanceId(), "demandeId");
+        String processInstanceId = task.getProcessInstanceId();
+        Long demandeId = (Long) runtimeService.getVariable(processInstanceId, "demandeId");
+
+        // Déjà traitée
         Optional<DemandeTeletravail> demandeOpt = demandeRepository.findById(demandeId);
-        if (demandeOpt.isPresent()) {
-            DemandeTeletravail demande = demandeOpt.get();
+        if (demandeOpt.isPresent() && demandeOpt.get().getStatut() != StatutDemande.PENDING) {
+            taskService.complete(taskId, Map.of("chefApprouve", false, "adminApprouve", false));
+            return;
+        }
+
+        // Compléter la tâche courante
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("chefApprouve", false);
+        variables.put("adminApprouve", false);
+        if (task.getTaskDefinitionKey().equals("ChefValidation")) {
+            variables.put("chefCommentaire", commentaire != null ? commentaire : "");
+        } else {
+            variables.put("adminCommentaire", commentaire != null ? commentaire : "");
+        }
+        taskService.complete(taskId, variables);
+
+        // Compléter les tâches restantes
+        taskService.createTaskQuery()
+                .processInstanceId(processInstanceId).active().list()
+                .forEach(t -> taskService.complete(t.getId(),
+                        Map.of("chefApprouve", false, "adminApprouve", false)));
+
+        // ✅ Sauvegarder statut + notifier tout le monde
+        demandeRepository.findById(demandeId).ifPresent(demande -> {
             demande.setStatut(StatutDemande.REJECTED);
             demande.setValidateur(validateur);
             demandeRepository.save(demande);
-        }
-
-        Map<String, Object> variables = new HashMap<>();
-        variables.put("rejected", true);
-        variables.put("rejectionCommentaire", commentaire);
-        taskService.complete(taskId, variables);
+            notificationService.notifierDecision(demande, "REJECTED", commentaire);
+        });
     }
 
     // ==================== STATISTIQUES ====================
 
-    // Statistiques pour dashboard
     public Map<String, Object> getStatistiques(User currentUser) {
         List<DemandeTeletravailResponse> demandes = getDemandesByUser(currentUser);
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("total", demandes.size());
-        stats.put("pending", demandes.stream().filter(d -> d.getStatut() == StatutDemande.PENDING).count());
-        stats.put("approved", demandes.stream().filter(d -> d.getStatut() == StatutDemande.APPROVED).count());
-        stats.put("rejected", demandes.stream().filter(d -> d.getStatut() == StatutDemande.REJECTED).count());
+        stats.put("pending", demandes.stream()
+                .filter(d -> d.getStatut() == StatutDemande.PENDING).count());
+        stats.put("approved", demandes.stream()
+                .filter(d -> d.getStatut() == StatutDemande.APPROVED).count());
+        stats.put("rejected", demandes.stream()
+                .filter(d -> d.getStatut() == StatutDemande.REJECTED).count());
 
-        // Tâches en attente
         if (currentUser.estChef()) {
             stats.put("pendingTasks", getChefTasks(currentUser.getEmail()).size());
         }
@@ -303,26 +339,75 @@ public class CamundaProcessService {
         return stats;
     }
 
+    // ==================== SCORING ====================
+
+    public Map<String, Object> calculerScore(Long demandeId) {
+        DemandeTeletravail demande = demandeRepository.findById(demandeId)
+                .orElseThrow(() -> new RuntimeException("Demande non trouvée"));
+
+        User utilisateur = demande.getUtilisateur();
+        Equipe equipe = utilisateur.getEquipe();
+
+        if (equipe == null) return buildScore(0, 0, 0);
+
+        List<User> membres = equipe.getMembres().stream()
+                .filter(m -> !m.getId().equals(utilisateur.getId()))
+                .collect(Collectors.toList());
+
+        int tailleEquipe = membres.size();
+        if (tailleEquipe == 0) return buildScore(0, 0, 0);
+
+        if (demande.getDateDebut() == null || demande.getDateFin() == null) {
+            return buildScore(0, 0, tailleEquipe);
+        }
+
+        List<Long> membreIds = membres.stream()
+                .map(User::getId)
+                .collect(Collectors.toList());
+
+        long chevauchements = demandeRepository.findByUtilisateurIdIn(membreIds).stream()
+                .filter(d -> StatutDemande.APPROVED.equals(d.getStatut()))
+                .filter(d -> d.getDateDebut() != null && d.getDateFin() != null)
+                .filter(d -> !d.getDateDebut().isAfter(demande.getDateFin())
+                        && !d.getDateFin().isBefore(demande.getDateDebut()))
+                .map(d -> d.getUtilisateur().getId())
+                .distinct()
+                .count();
+
+        int score = (int) Math.round((chevauchements * 100.0) / tailleEquipe);
+        return buildScore(score, chevauchements, tailleEquipe);
+    }
+
+    private Map<String, Object> buildScore(int score, long chevauchements, int tailleEquipe) {
+        String niveau = score >= 60 ? "high" : score >= 30 ? "medium" : "low";
+        String label  = score >= 60 ? "Risque élevé" : score >= 30 ? "Risque modéré" : "Risque faible";
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("score", score);
+        result.put("label", label);
+        result.put("niveau", niveau);
+        result.put("demandesEnChevauchement", chevauchements);
+        result.put("tailleEquipe", tailleEquipe);
+        return result;
+    }
+
     // ==================== MÉTHODES PRIVÉES ====================
 
     private void checkAccess(DemandeTeletravail demande, User currentUser) {
-        boolean hasAccess = currentUser.estAdmin() || currentUser.estRH() ||
-                demande.getUtilisateur().getId().equals(currentUser.getId()) ||
-                (currentUser.estChef() && currentUser.getEquipe() != null &&
-                        demande.getUtilisateur().getEquipe() != null &&
-                        currentUser.getEquipe().getId().equals(demande.getUtilisateur().getEquipe().getId()));
+        boolean hasAccess = currentUser.estAdmin()
+                || currentUser.estRH()
+                || demande.getUtilisateur().getId().equals(currentUser.getId())
+                || (currentUser.estChef() && currentUser.getEquipe() != null
+                && demande.getUtilisateur().getEquipe() != null
+                && currentUser.getEquipe().getId()
+                .equals(demande.getUtilisateur().getEquipe().getId()));
 
-        if (!hasAccess) {
-            throw new RuntimeException("Accès non autorisé à cette demande");
-        }
+        if (!hasAccess) throw new RuntimeException("Accès non autorisé à cette demande");
     }
 
     private String getCurrentStep(String processInstanceId) {
         List<Task> activeTasks = taskService.createTaskQuery()
-                .processInstanceId(processInstanceId)
-                .active()
-                .list();
-
+                .processInstanceId(processInstanceId).active().list();
         if (activeTasks.isEmpty()) return "Terminé";
         return activeTasks.get(0).getName();
     }
@@ -337,10 +422,15 @@ public class CamundaProcessService {
         response.setStatut(demande.getStatut());
         response.setDateCreation(demande.getDateCreation());
         response.setProcessInstanceId(demande.getProcessInstanceId());
+        response.setFichierjustificatif(demande.getFichierjustificatif());
 
         if (demande.getUtilisateur() != null) {
             response.setUtilisateurNom(demande.getUtilisateur().getNom());
             response.setUtilisateurEmail(demande.getUtilisateur().getEmail());
+            response.setUtilisateurId(demande.getUtilisateur().getId());
+            if (demande.getUtilisateur().getEquipe() != null) {
+                response.setUtilisateurEquipe(demande.getUtilisateur().getEquipe().getNom());
+            }
         }
 
         return response;

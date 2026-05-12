@@ -66,22 +66,22 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-
-        // 1️⃣ Vérifier si user existe
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Utilisateur introuvable"));
 
-        // 2️⃣ Vérifier password
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Email ou mot de passe incorrect");
         }
 
-        // 3️⃣ Générer JWT
         String token = jwtService.generateToken(user);
 
-        // 4️⃣ Retourner token + role
-        return ResponseEntity.ok(
-                new AuthResponse(token, user.getRole().name())
-        );
+        return ResponseEntity.ok(Map.of(
+                "token",    token,
+                "role",     user.getRole().name(),
+                "userId",   user.getId(),        // ← ajout
+                "nom",      user.getNom(),       // ← ajout
+                "email",    user.getEmail(),     // ← ajout
+                "equipeId", user.getEquipe() != null ? user.getEquipe().getId() : 0L  // ← ajout
+        ));
     }
 }

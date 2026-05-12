@@ -70,40 +70,27 @@ public class ValidationService {
     private void updateDemandeStatus(DemandeTeletravail demande) {
         List<Validation> validations = demande.getValidations();
 
-        // Vérifier s'il y a un rejet
-        boolean rejected = validations.stream()
-                .anyMatch(v -> v.getStatut() == StatutDemande.REJECTED);
+        boolean chefVoted = validations.stream().anyMatch(v -> v.getValidateur().estChef());
+        boolean adminVoted = validations.stream().anyMatch(v -> v.getValidateur().estAdmin());
 
-        if (rejected) {
-            demande.setStatut(StatutDemande.REJECTED);
-            log.info("Demande {} rejetée", demande.getId());
-            return;
-        }
-
-        // Vérifier si Chef et Admin ont tous les deux approuvé
         boolean chefApproved = validations.stream()
                 .anyMatch(v -> v.getValidateur().estChef() && v.getStatut() == StatutDemande.APPROVED);
-
         boolean adminApproved = validations.stream()
                 .anyMatch(v -> v.getValidateur().estAdmin() && v.getStatut() == StatutDemande.APPROVED);
 
-        // APPROVED seulement quand les DEUX ont approuvé
-        if (chefApproved && adminApproved) {
-            demande.setStatut(StatutDemande.APPROVED);
-            log.info("Demande {} approuvée par Chef et Admin", demande.getId());
-        }
-        // PENDING si un seul a approuvé
-        else {
+        boolean anyRejected = validations.stream()
+                .anyMatch(v -> v.getStatut() == StatutDemande.REJECTED);
+
+        // Both have voted
+        if (chefVoted && adminVoted) {
+            // BPMN condition: approved if adminApprouve==true OR (adminApprouve==null && chefApprouve==true)
+            boolean finalApproved = adminApproved || (!adminVoted && chefApproved);
+            demande.setStatut(finalApproved ? StatutDemande.APPROVED : StatutDemande.REJECTED);
+        } else {
+            // Still waiting for remaining parallel vote
             demande.setStatut(StatutDemande.PENDING);
-            String message = "";
-            if (chefApproved && !adminApproved) {
-                message = "en attente validation Admin";
-            } else if (!chefApproved && adminApproved) {
-                message = "en attente validation Chef";
-            } else {
-                message = "en attente de validation";
-            }
-            log.info("Demande {} - {}", demande.getId(), message);
+            log.info("Demande {} - en attente des votes parallèles ({}/2 reçus)",
+                    demande.getId(), validations.size());
         }
     }
 

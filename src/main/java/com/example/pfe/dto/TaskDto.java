@@ -1,7 +1,6 @@
 package com.example.pfe.dto;
 
 import java.util.Date;
-
 public class TaskDto {
     private String id;
     private String name;
@@ -13,6 +12,10 @@ public class TaskDto {
     private int priority;
     private Long demandeId;  // Ajouté
     private String motif;     // Ajouté
+    private String utilisateurNom;
+    private String dateDebut;
+    private String dateFin;
+    private Long duree;
 
     public TaskDto() {}
 
@@ -57,4 +60,13 @@ public class TaskDto {
 
     public String getMotif() { return motif; }
     public void setMotif(String motif) { this.motif = motif; }
+    public String getUtilisateurNom() { return utilisateurNom; }
+    public void setUtilisateurNom(String utilisateurNom) { this.utilisateurNom = utilisateurNom; }
+    public String getDateDebut() { return dateDebut; }
+    public void setDateDebut(String dateDebut) { this.dateDebut = dateDebut; }
+    public String getDateFin() { return dateFin; }
+    public void setDateFin(String dateFin) { this.dateFin = dateFin; }
+    public Long getDuree() { return duree; }
+    public void setDuree(Long duree) { this.duree = duree; }
+
 }

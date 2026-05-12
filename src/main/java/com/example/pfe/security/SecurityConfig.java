@@ -35,7 +35,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers("/auth/**").permitAll();
                     auth.requestMatchers("/camunda/**", "/engine-rest/**").permitAll();
-
+                    auth.requestMatchers("/ws/**").permitAll();  // ← ADD THIS
+                            auth.requestMatchers("/api/notifications/**").authenticated();
                     // ✅ CORRECTION : Utiliser hasAuthority avec le nom exact (avec ROLE_)
                     auth.requestMatchers("/api/camunda/**").permitAll();
                     auth.requestMatchers("/api/users/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_CHEF_EQUIPE");

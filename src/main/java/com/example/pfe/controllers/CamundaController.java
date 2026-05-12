@@ -1,13 +1,11 @@
-// CamundaController.java - Version complète et corrigée
 package com.example.pfe.controllers;
 
-import com.example.pfe.dto.DemandeTeletravailRequest;
 import com.example.pfe.dto.DemandeTeletravailResponse;
 import com.example.pfe.dto.TaskDto;
-import com.example.pfe.models.DemandeTeletravail;
 import com.example.pfe.models.User;
 import com.example.pfe.repository.UserRepository;
 import com.example.pfe.services.CamundaProcessService;
+import com.example.pfe.services.DemandeTeletravailService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -16,15 +14,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import com.example.pfe.services.DemandeTeletravailService;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -33,14 +28,20 @@ import java.util.Map;
 @CrossOrigin(origins = "http://localhost:4200")
 public class CamundaController {
 
-    @Autowired
-    private CamundaProcessService camundaService;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private DemandeTeletravailService demandeService;
+    @Autowired private CamundaProcessService camundaService;
+    @Autowired private UserRepository userRepository;
+    @Autowired private DemandeTeletravailService demandeService;
+    // ✅ Helper commun pour récupérer l'utilisateur courant
+    private User getCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Object principal = auth.getPrincipal();
+        if (principal instanceof User) {
+            return (User) principal;
+        }
+        String email = principal.toString();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found: " + email));
+    }
 
     // ==================== DEMANDES ====================
 
@@ -50,24 +51,11 @@ public class CamundaController {
             @RequestParam("dateDebut") String dateDebut,
             @RequestParam("dateFin") String dateFin,
             @RequestParam("type") String type,
-            @RequestParam(value = "fichier", required = false) MultipartFile fichier,
-            @AuthenticationPrincipal User currentUser) {
-
-        User user = currentUser;
-        if (user == null) {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            String email = auth.getName();
-            user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
-        }
-
-        System.out.println("=== createDemande CALLED ===");
-        System.out.println("motif: " + motif);
-        System.out.println("currentUser: " + user.getEmail());
-
+            @RequestParam(value = "fichier", required = false) MultipartFile fichier) {
         try {
+            User user = getCurrentUser();
             Map<String, Object> result = camundaService.createDemandeWithProcess(
-                    motif, dateDebut, dateFin, type, fichier, user
-            );
+                    motif, dateDebut, dateFin, type, fichier, user);
             return ResponseEntity.status(HttpStatus.CREATED).body(result);
         } catch (Exception e) {
             e.printStackTrace();
@@ -76,98 +64,47 @@ public class CamundaController {
     }
 
     @GetMapping("/demandes")
-    public ResponseEntity<List<DemandeTeletravailResponse>> getMyDemandes(
-            @AuthenticationPrincipal User currentUser) {
-        System.out.println("=== getMyDemandes CALLED ===");
-        System.out.println("Current user from @AuthenticationPrincipal: " + (currentUser != null ? currentUser.getEmail() : "null"));
-
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        System.out.println("Auth from context: " + (auth != null ? auth.getName() : "null"));
-        System.out.println("Auth authorities: " + (auth != null ? auth.getAuthorities() : "null"));
-
-        if (currentUser == null && auth != null) {
-            String email = auth.getName();
-            currentUser = userRepository.findByEmail(email).orElse(null);
-            System.out.println("User retrieved from context: " + (currentUser != null ? currentUser.getEmail() : "null"));
-        }
-
-        if (currentUser == null) {
+    public ResponseEntity<List<DemandeTeletravailResponse>> getMyDemandes() {
+        try {
+            User user = getCurrentUser();
+            return ResponseEntity.ok(camundaService.getDemandesByUser(user));
+        } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-
-        List<DemandeTeletravailResponse> demandes = camundaService.getDemandesByUser(currentUser);
-        System.out.println("Demandes trouvées: " + demandes.size());
-
-        return ResponseEntity.ok(demandes);
     }
 
     @GetMapping("/demandes/all")
-    @PreAuthorize("hasAnyRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_RH')")
     public ResponseEntity<List<DemandeTeletravailResponse>> getAllDemandes() {
         return ResponseEntity.ok(camundaService.getAllDemandes());
     }
 
-    @GetMapping("/demandes/{id}/suivi")
-    @PreAuthorize("hasAnyRole('EMPLOYE', 'CHEF_EQUIPE', 'RH', 'ADMIN')")
-    public ResponseEntity<?> getSuiviDemande(@PathVariable Long id) {
+    @GetMapping("/demandes/{id}/score")
+    public ResponseEntity<Map<String, Object>> getScoreDemande(@PathVariable Long id) {
         try {
-            System.out.println("=== getSuiviDemande ===");
-            System.out.println("Demande ID: " + id);
-
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth == null || !auth.isAuthenticated()) {
-                System.out.println("❌ Non authentifié");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Non authentifié");
-            }
-
-            String email = auth.getName();
-            System.out.println("Email from context: " + email);
-
-            User currentUser = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-
-            System.out.println("User found: " + currentUser.getEmail() + ", role: " + currentUser.getRole());
-
-            DemandeTeletravail demande = demandeService.getDemandeEntityById(id);
-
-            if (currentUser.estAdmin()) {
-                System.out.println("✅ Admin - Accès autorisé");
-                DemandeTeletravailResponse detail = demandeService.getDemandeDetail(id);
-                return ResponseEntity.ok(detail);
-            }
-
-            boolean hasAccess = currentUser.estRH() ||
-                    demande.getUtilisateur().getId().equals(currentUser.getId()) ||
-                    (currentUser.estChef() && currentUser.getEquipe() != null &&
-                            demande.getUtilisateur().getEquipe() != null &&
-                            currentUser.getEquipe().getId().equals(demande.getUtilisateur().getEquipe().getId()));
-
-            if (!hasAccess) {
-                System.out.println("❌ Accès refusé");
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Accès non autorisé");
-            }
-
-            DemandeTeletravailResponse detail = demandeService.getDemandeDetail(id);
-            return ResponseEntity.ok(detail);
-
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+            Map<String, Object> score = camundaService.calculerScore(id);
+            return ResponseEntity.ok(score);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erreur: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
-    @GetMapping("/test")
-    public ResponseEntity<String> test() {
-        System.out.println("=== TEST ENDPOINT CALLED ===");
-        return ResponseEntity.ok("API Camunda fonctionne!");
+    @GetMapping("/demandes/{id}/suivi")
+    public ResponseEntity<?> getSuiviDemande(@PathVariable Long id) {
+        try {
+            User currentUser = getCurrentUser();
+            DemandeTeletravailResponse detail = demandeService.getDemandeDetail(id);
+            return ResponseEntity.ok(detail);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Erreur: " + e.getMessage());
+        }
     }
 
     @DeleteMapping("/demandes/{id}")
-    @PreAuthorize("hasAnyRole('EMPLOYE', 'ADMIN')")
-    public ResponseEntity<?> annulerDemande(@PathVariable Long id,
-                                            @AuthenticationPrincipal User currentUser) {
+    public ResponseEntity<?> annulerDemande(@PathVariable Long id) {
         try {
+            User currentUser = getCurrentUser();
             camundaService.annulerDemande(id, currentUser);
             return ResponseEntity.ok(Map.of("message", "Demande annulée avec succès"));
         } catch (Exception e) {
@@ -175,89 +112,99 @@ public class CamundaController {
         }
     }
 
-    // ==================== TÂCHES CAMUNDA ====================
+    // ==================== TÂCHES ====================
 
     @GetMapping("/taches/chef")
     public ResponseEntity<List<TaskDto>> getChefTasks() {
-        System.out.println("=== getChefTasks ===");
-
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
+        try {
+            User user = getCurrentUser();
+            return ResponseEntity.ok(camundaService.getChefTasks(user.getEmail()));
+        } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-
-        String email = auth.getName();
-        System.out.println("Email: " + email);
-
-        List<TaskDto> tasks = camundaService.getChefTasks(email);
-        System.out.println("Tâches trouvées: " + tasks.size());
-
-        return ResponseEntity.ok(tasks);
     }
 
     @GetMapping("/taches/admin")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<List<TaskDto>> getAdminTasks() {
-        List<TaskDto> tasks = camundaService.getAdminTasks();
-        return ResponseEntity.ok(tasks);
+        return ResponseEntity.ok(camundaService.getAdminTasks());
     }
 
     @PostMapping("/taches/{taskId}/approuver")
-    @PreAuthorize("hasAnyRole('CHEF_EQUIPE', 'ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CHEF_EQUIPE', 'ROLE_ADMIN')")
     public ResponseEntity<?> approuverTache(
             @PathVariable String taskId,
-            @RequestBody(required = false) Map<String, String> body,
-            @AuthenticationPrincipal User currentUser) {
-
+            @RequestBody(required = false) Map<String, String> body) {
         try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            System.out.println("🔐 Authorities: " + auth.getAuthorities());
+            System.out.println("🔐 Principal: " + auth.getPrincipal().getClass().getSimpleName());
+
+            User currentUser = getCurrentUser();
+            System.out.println("👤 currentUser: " + currentUser.getEmail() + " role: " + currentUser.getRole());
+
             String commentaire = body != null ? body.get("commentaire") : null;
             camundaService.approuverTache(taskId, currentUser, commentaire);
             return ResponseEntity.ok(Map.of("message", "Tâche approuvée avec succès"));
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     @PostMapping("/taches/{taskId}/rejeter")
-    @PreAuthorize("hasAnyRole('CHEF_EQUIPE', 'ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CHEF_EQUIPE', 'ROLE_ADMIN')")
     public ResponseEntity<?> rejeterTache(
             @PathVariable String taskId,
-            @RequestBody(required = false) Map<String, String> body,
-            @AuthenticationPrincipal User currentUser) {
-
+            @RequestBody(required = false) Map<String, String> body) {
         try {
+            User currentUser = getCurrentUser();
             String commentaire = body != null ? body.get("commentaire") : null;
             camundaService.rejeterTache(taskId, currentUser, commentaire);
-            return ResponseEntity.ok(Map.of("message", "Tâche rejetée"));
+            return ResponseEntity.ok(Map.of("message", "Tâche rejetée avec succès"));
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     @GetMapping("/statistiques")
-    @PreAuthorize("hasAnyRole('EMPLOYE', 'CHEF_EQUIPE', 'RH', 'ADMIN')")
-    public ResponseEntity<Map<String, Object>> getStatistiques(@AuthenticationPrincipal User currentUser) {
-        return ResponseEntity.ok(camundaService.getStatistiques(currentUser));
+    public ResponseEntity<Map<String, Object>> getStatistiques() {
+        return ResponseEntity.ok(camundaService.getStatistiques(getCurrentUser()));
     }
 
-    // ==================== TÉLÉCHARGEMENT DE FICHIERS ====================
-
     @GetMapping("/download/{filename}")
-    @PreAuthorize("hasAnyRole('EMPLOYE', 'CHEF_EQUIPE', 'RH', 'ADMIN')")
     public ResponseEntity<Resource> downloadFile(@PathVariable String filename) {
         try {
             Path filePath = Paths.get("uploads/" + filename);
             Resource resource = new UrlResource(filePath.toUri());
-
             if (resource.exists() && resource.isReadable()) {
                 return ResponseEntity.ok()
-                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                        .header(HttpHeaders.CONTENT_DISPOSITION,
+                                "attachment; filename=\"" + filename + "\"")
                         .body(resource);
-            } else {
-                return ResponseEntity.notFound().build();
             }
+            return ResponseEntity.notFound().build();
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
+    }
+    @GetMapping("/demandes/equipe")
+    @PreAuthorize("hasAuthority('ROLE_CHEF_EQUIPE')")
+    public ResponseEntity<?> getDemandesEquipe() {
+        try {
+            User chef = getCurrentUser();
+            if (chef.getEquipe() == null) {
+                return ResponseEntity.ok(List.of());
+            }
+            return ResponseEntity.ok(demandeService.getDemandesByEquipe(chef.getEquipe().getId()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+    @GetMapping("/test")
+    public ResponseEntity<String> test() {
+        return ResponseEntity.ok("API Camunda fonctionne!");
     }
 }

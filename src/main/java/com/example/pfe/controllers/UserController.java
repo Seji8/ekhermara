@@ -41,55 +41,31 @@ public class UserController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'CHEF_EQUIPE')")
-    public ResponseEntity<?> getAllUsers(@AuthenticationPrincipal String email) {
-        System.out.println("=== UserController.getAllUsers ===");
-        System.out.println("Email: " + email);
-
-        if (email == null) {
+    public ResponseEntity<?> getAllUsers(@AuthenticationPrincipal User currentUser) {
+        if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("Utilisateur non authentifié");
         }
-
         try {
-            // Récupérer l'utilisateur à partir de l'email
-            User currentUser = userService.findByEmail(email);
-            if (currentUser == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body("Utilisateur non trouvé");
-            }
-
             List<CreateUserResponse> users = userService.getUsersByRole(currentUser);
-            System.out.println("Nombre d'utilisateurs retournés: " + users.size());
             return ResponseEntity.ok(users);
-
         } catch (RuntimeException e) {
-            System.err.println("Erreur: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
         }
     }
 
     @GetMapping("/my-team")
     @PreAuthorize("hasRole('CHEF_EQUIPE')")
-    public ResponseEntity<?> getMyTeam(@AuthenticationPrincipal String email) {
-        if (email == null) {
+    public ResponseEntity<?> getMyTeam(@AuthenticationPrincipal User currentUser) {
+        if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("User not authenticated");
         }
-
         try {
-            User currentUser = userService.findByEmail(email);
-            if (currentUser == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body("User not found");
-            }
-
             Equipe equipe = userService.getEquipeForChef(currentUser);
-            List<User> members = equipe.getMembres();
-
-            members = members.stream()
+            List<User> members = equipe.getMembres().stream()
                     .filter(m -> !m.getId().equals(currentUser.getId()))
                     .collect(Collectors.toList());
-
             return ResponseEntity.ok(members);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
@@ -98,24 +74,14 @@ public class UserController {
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'CHEF_EQUIPE')")
-    public ResponseEntity<?> getUserById(@PathVariable Long id, @AuthenticationPrincipal String email) {
-        System.out.println("=== UserController.getUserById ===");
-        System.out.println("Email: " + email);
-
-        if (email == null) {
+    public ResponseEntity<?> getUserById(@PathVariable Long id,
+                                         @AuthenticationPrincipal User currentUser) {
+        if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("Utilisateur non authentifié");
         }
-
         try {
-            User currentUser = userService.findByEmail(email);
-            if (currentUser == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body("Utilisateur non trouvé");
-            }
-
             CreateUserResponse user = userService.getUserById(id);
-
             if (currentUser.estChef()) {
                 Equipe equipe = userService.getEquipeForChef(currentUser);
                 if (user.getEquipeId() == null || !user.getEquipeId().equals(equipe.getId())) {
@@ -123,9 +89,7 @@ public class UserController {
                             .body("Vous n'avez pas accès à cet utilisateur");
                 }
             }
-
             return ResponseEntity.ok(user);
-
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         }

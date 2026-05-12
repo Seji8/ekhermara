@@ -3,6 +3,7 @@ package com.example.pfe.controllers;
 import com.example.pfe.dto.DemandeTeletravailRequest;
 import com.example.pfe.dto.DemandeTeletravailResponse;
 import com.example.pfe.models.*;
+import com.example.pfe.repository.DemandeTeletravailRepository;
 import com.example.pfe.repository.UserRepository;
 import com.example.pfe.services.DemandeTeletravailService;
 import com.example.pfe.services.ValidationService;
@@ -10,7 +11,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -55,11 +58,6 @@ public class DemandeTeletravailController {
         }
     }
 
-    @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN')")
-    public ResponseEntity<List<DemandeTeletravailResponse>> getAllDemandes() {
-        return ResponseEntity.ok(demandeService.getAllDemandes());
-    }
 
     @GetMapping("/user")
     @PreAuthorize("hasAnyRole('EMPLOYE', 'CHEF_EQUIPE', 'RH', 'ADMIN')")
@@ -166,58 +164,5 @@ public class DemandeTeletravailController {
         }
     }
 
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('EMPLOYE', 'CHEF_EQUIPE', 'ADMIN')")
-    public ResponseEntity<?> deleteDemande(
-            @PathVariable Long id,
-            @AuthenticationPrincipal User currentUser) {
-        if (currentUser == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        try {
-            demandeService.deleteDemande(id, currentUser.getId());
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
 
-    @GetMapping("/{id}/suivi")
-    @PreAuthorize("hasAnyRole('EMPLOYE', 'CHEF_EQUIPE', 'RH', 'ADMIN')")
-    public ResponseEntity<?> getSuiviDemande(@PathVariable Long id, @AuthenticationPrincipal User currentUser) {
-        try {
-            if (currentUser == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body("Utilisateur non authentifié");
-            }
-
-            DemandeTeletravail demande = demandeService.getDemandeEntityById(id);
-
-            boolean hasAccess = false;
-
-            if (currentUser.estAdmin() || currentUser.estRH()) {
-                hasAccess = true;
-            } else if (demande.getUtilisateur().getId().equals(currentUser.getId())) {
-                hasAccess = true;
-            } else if (currentUser.estChef() && currentUser.getEquipe() != null &&
-                    demande.getUtilisateur().getEquipe() != null &&
-                    currentUser.getEquipe().getId().equals(demande.getUtilisateur().getEquipe().getId())) {
-                hasAccess = true;
-            }
-
-            if (!hasAccess) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body("Vous n'avez pas accès à cette demande");
-            }
-
-            DemandeTeletravailResponse detail = demandeService.getDemandeDetail(id);
-            return ResponseEntity.ok(detail);
-
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Erreur lors de la récupération du suivi: " + e.getMessage());
-        }
-    }
 }

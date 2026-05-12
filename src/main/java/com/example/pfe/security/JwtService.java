@@ -28,6 +28,8 @@ public class JwtService {
         return Jwts.builder()
                 .setSubject(user.getEmail())
                 .claim("role", user.getRole() != null ? user.getRole().name() : "UNKNOWN")
+                .claim("id", user.getId())    // ← ajouter
+                .claim("nom", user.getNom())  // ← ajouter
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + validitySeconds * 1000))
                 .signWith(secretKey, SignatureAlgorithm.HS256)

@@ -6,67 +6,50 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "notifications")
 public class Notification {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String msg;
+    private String type;
+    private String titre;
+    private String message;
+    private Long demandeId;
+    private String statut;
 
-    @ManyToOne
+    private boolean lu = false;
+    private LocalDateTime timestamp = LocalDateTime.now();
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
-    private User user;
-
-    private boolean lue;
-
-    @Column(name = "created_at")
+    private User destinataire;
+    @Column(name = "lue", insertable = false, updatable = false)
+    private Boolean lue;
+    @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    public Notification() {
-        this.createdAt = LocalDateTime.now();
-        this.lue = false;
-    }
+    @Column(name = "user_email", insertable = false, updatable = false)
+    private String userEmail;
 
-    public Long getId() {
-        return id;
-    }
+    @Column(name = "msg", insertable = false, updatable = false)
+    private String msg;
 
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getMsg() {
-        return msg;
-    }
-
-    public void setMsg(String msg) {
-        this.msg = msg;
-    }
-
-    public User getUser() {
-        return user;
-    }
-
-    public void setUser(User user) {
-        this.user = user;
-    }
-
-    public boolean isLue() {
-        return lue;
-    }
-
-    public void setLue(boolean lue) {
-        this.lue = lue;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public void envoyer() {
-        // Logic to send notification
-    }
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+    public String getTitre() { return titre; }
+    public void setTitre(String titre) { this.titre = titre; }
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+    public Long getDemandeId() { return demandeId; }
+    public void setDemandeId(Long demandeId) { this.demandeId = demandeId; }
+    public String getStatut() { return statut; }
+    public void setStatut(String statut) { this.statut = statut; }
+    public boolean isLu() { return lu; }
+    public void setLu(boolean lu) { this.lu = lu; }
+    public LocalDateTime getTimestamp() { return timestamp; }
+    public void setTimestamp(LocalDateTime timestamp) { this.timestamp = timestamp; }
+    public User getDestinataire() { return destinataire; }
+    public void setDestinataire(User destinataire) { this.destinataire = destinataire; }
 }

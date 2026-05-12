@@ -16,6 +16,8 @@ public class Validation {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String validateurNom;
+    private String validateurRole;
     @ManyToOne
     @JoinColumn(name = "demande_id", nullable = false)
     private DemandeTeletravail demande;

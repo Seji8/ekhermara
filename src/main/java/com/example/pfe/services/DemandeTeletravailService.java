@@ -30,7 +30,7 @@ public class DemandeTeletravailService {
     private final DemandeTeletravailRepository demandeRepository;
     private final UserRepository userRepository;
     private final ValidationRepository validationRepository;
-    private final ValidationService validationService;  // ← Ajouté
+    private final ValidationService validationService;
 
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;
@@ -38,11 +38,11 @@ public class DemandeTeletravailService {
     public DemandeTeletravailService(DemandeTeletravailRepository demandeRepository,
                                      UserRepository userRepository,
                                      ValidationRepository validationRepository,
-                                     ValidationService validationService) {  // ← Ajouté
+                                     ValidationService validationService) {
         this.demandeRepository = demandeRepository;
         this.userRepository = userRepository;
         this.validationRepository = validationRepository;
-        this.validationService = validationService;  // ← Ajouté
+        this.validationService = validationService;
     }
 
     @Transactional
@@ -128,16 +128,16 @@ public class DemandeTeletravailService {
     }
 
     @Transactional
-    public void deleteDemande(Long id, Long userId) {
+    public void deleteDemande(Long id, Long currentUserId) {
         DemandeTeletravail demande = demandeRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Demande non trouvée"));
 
-        if (!demande.getUtilisateur().getId().equals(userId)) {
-            throw new RuntimeException("Vous ne pouvez supprimer que vos propres demandes");
+        if (!demande.getUtilisateur().getId().equals(currentUserId)) {
+            throw new RuntimeException("Vous n'êtes pas autorisé à supprimer cette demande");
         }
 
-        if (demande.getFichierjustificatif() != null) {
-            deleteFile(demande.getFichierjustificatif());
+        if (!demande.getStatut().equals(StatutDemande.PENDING)) {
+            throw new RuntimeException("Seules les demandes en attente peuvent être annulées");
         }
 
         demandeRepository.delete(demande);
@@ -256,7 +256,7 @@ public class DemandeTeletravailService {
             case 1:
                 return "Chef d'équipe";
             case 2:
-                return "Administrateur";  // ← Modifié
+                return "Administrateur";
             default:
                 return "Validation terminée";
         }

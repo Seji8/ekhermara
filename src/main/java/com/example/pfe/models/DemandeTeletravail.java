@@ -47,6 +47,11 @@ public class DemandeTeletravail {
 
     @OneToMany(mappedBy = "demande", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Validation> validations = new ArrayList<>();
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+
+    @JoinColumn(name = "demande_id")
+    private List<Validation> historiqueValidations = new ArrayList<>();
+
 
     private int etapeValidation = 1;
 
