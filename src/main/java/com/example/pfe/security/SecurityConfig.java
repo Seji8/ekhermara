@@ -2,6 +2,7 @@ package com.example.pfe.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -33,14 +34,30 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
-                    auth.requestMatchers("/auth/**").permitAll();
+                    // ── Public auth endpoints only ────────────────────────
+                    auth.requestMatchers("/auth/login", "/auth/forgot-password").permitAll();
+
+                    // ── /auth/me requires a valid token ───────────────────
+                    auth.requestMatchers(HttpMethod.GET, "/auth/me").authenticated();
+
+                    // ── Camunda / WebSocket ───────────────────────────────
                     auth.requestMatchers("/camunda/**", "/engine-rest/**").permitAll();
-                    auth.requestMatchers("/ws/**").permitAll();  // ← ADD THIS
-                            auth.requestMatchers("/api/notifications/**").authenticated();
-                    // ✅ CORRECTION : Utiliser hasAuthority avec le nom exact (avec ROLE_)
+                    auth.requestMatchers("/ws/**").permitAll();
                     auth.requestMatchers("/api/camunda/**").permitAll();
-                    auth.requestMatchers("/api/users/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_CHEF_EQUIPE");
                     auth.requestMatchers("/api/camunda/download/**").authenticated();
+
+                    // ── Notifications ─────────────────────────────────────
+                    auth.requestMatchers("/api/notifications/**").authenticated();
+
+                    // ── /api/users/me — any authenticated role ────────────
+                    auth.requestMatchers(HttpMethod.GET, "/api/users/me").authenticated();
+                    auth.requestMatchers(HttpMethod.PUT, "/api/users/me").authenticated();
+
+                    // ── /api/users/** — ADMIN and CHEF_EQUIPE only ────────
+                    auth.requestMatchers("/api/users/**")
+                            .hasAnyAuthority("ROLE_ADMIN", "ROLE_CHEF_EQUIPE");
+
+                    // ── Everything else requires authentication ────────────
                     auth.anyRequest().authenticated();
                 })
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

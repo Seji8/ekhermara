@@ -127,4 +127,25 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         }
     }
+    @PutMapping("/me")
+    
+    @PreAuthorize("hasAnyRole('CHEF_EQUIPE', 'EMPLOYE', 'RH')")
+    public ResponseEntity<?> updateMyProfile(
+            @RequestBody UpdateUserRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Non authentifié");
+        }
+        try {
+            // Force equipeId to stay unchanged — employee can't change their own team
+            request.setRole(null);       // can't change own role
+            request.setEquipeId(currentUser.getEquipe() != null
+                    ? currentUser.getEquipe().getId() : null);
+
+            CreateUserResponse updated = userService.updateUser(currentUser.getId(), request);
+            return ResponseEntity.ok(updated);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 }
