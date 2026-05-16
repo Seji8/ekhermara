@@ -6,6 +6,8 @@ import com.example.pfe.models.User;
 import com.example.pfe.repository.UserRepository;
 import com.example.pfe.services.CamundaProcessService;
 import com.example.pfe.services.DemandeTeletravailService;
+import org.camunda.bpm.engine.TaskService;
+import org.camunda.bpm.engine.task.Task;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -31,6 +33,8 @@ public class CamundaController {
     @Autowired private CamundaProcessService camundaService;
     @Autowired private UserRepository userRepository;
     @Autowired private DemandeTeletravailService demandeService;
+    @Autowired private org.camunda.bpm.engine.RuntimeService runtimeService;
+    @Autowired private org.camunda.bpm.engine.TaskService taskService;
     // ✅ Helper commun pour récupérer l'utilisateur courant
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -79,17 +83,6 @@ public class CamundaController {
         return ResponseEntity.ok(camundaService.getAllDemandes());
     }
 
-    @GetMapping("/demandes/{id}/score")
-    public ResponseEntity<Map<String, Object>> getScoreDemande(@PathVariable Long id) {
-        try {
-            Map<String, Object> score = camundaService.calculerScore(id);
-            return ResponseEntity.ok(score);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-
     @GetMapping("/demandes/{id}/suivi")
     public ResponseEntity<?> getSuiviDemande(@PathVariable Long id) {
         try {
@@ -136,20 +129,34 @@ public class CamundaController {
     public ResponseEntity<?> approuverTache(
             @PathVariable String taskId,
             @RequestBody(required = false) Map<String, String> body) {
+
         try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            System.out.println("🔐 Authorities: " + auth.getAuthorities());
-            System.out.println("🔐 Principal: " + auth.getPrincipal().getClass().getSimpleName());
-
             User currentUser = getCurrentUser();
-            System.out.println("👤 currentUser: " + currentUser.getEmail() + " role: " + currentUser.getRole());
-
             String commentaire = body != null ? body.get("commentaire") : null;
+
+            // ✅ action Camunda
             camundaService.approuverTache(taskId, currentUser, commentaire);
+
+            // ✅ recalcul score propre
+            Task task = taskService.createTaskQuery()
+                    .taskId(taskId)
+                    .singleResult();
+
+            if (task != null) {
+                Long demandeId = (Long) runtimeService.getVariable(
+                        task.getProcessInstanceId(),
+                        "demandeId"
+                );
+
+                camundaService.calculerScore(demandeId);
+            }
+
             return ResponseEntity.ok(Map.of("message", "Tâche approuvée avec succès"));
+
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -158,15 +165,24 @@ public class CamundaController {
     public ResponseEntity<?> rejeterTache(
             @PathVariable String taskId,
             @RequestBody(required = false) Map<String, String> body) {
+
         try {
             User currentUser = getCurrentUser();
             String commentaire = body != null ? body.get("commentaire") : null;
+
             camundaService.rejeterTache(taskId, currentUser, commentaire);
+
             return ResponseEntity.ok(Map.of("message", "Tâche rejetée avec succès"));
+
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", e.getMessage()));
         }
+    }
+    @GetMapping("/demandes/{id}/score")
+    public ResponseEntity<Map<String, Object>> getScore(@PathVariable Long id) {
+        return ResponseEntity.ok(camundaService.calculerScore(id));
     }
 
     @GetMapping("/statistiques")

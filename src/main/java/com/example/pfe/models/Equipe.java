@@ -1,10 +1,14 @@
 package com.example.pfe.models;
 
+import com.example.pfe.repository.PolitiqueTeletravailRepository;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Entity
 @Table(name = "equipe")
@@ -73,4 +77,6 @@ public class Equipe {
     public Map<String, Object> getStatistiques() {
         return Map.of();
     }
+
+
 }

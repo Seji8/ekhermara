@@ -19,10 +19,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("SELECT u FROM User u LEFT JOIN FETCH u.equipe WHERE u.id = :id")
     Optional<User> findByIdWithEquipe(@Param("id") Long id);
-
+    @Query("SELECT COUNT(u) FROM User u WHERE u.equipe.id = :equipeId")
+    int countByEquipeId(@Param("equipeId") Long equipeId);
     //  Utilise Role enum, pas String
     List<User> findByRoleIn(List<Role> roles);
     List<User> findByEquipeId(Long equipeId);
 
     Optional<Object> findByMatricule(String matricule);
+    @Query("SELECT u.id FROM User u WHERE u.equipe.id = :equipeId")
+    List<Long> findIdsByEquipeId(@Param("equipeId") Long equipeId);
 }

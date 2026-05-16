@@ -1,6 +1,7 @@
 package com.example.pfe.dto;
 
 import com.example.pfe.models.Equipe;
+import com.example.pfe.repository.UserRepository;
 
 public class EquipeResponse {
     private Long id;
@@ -11,15 +12,15 @@ public class EquipeResponse {
 
     public EquipeResponse() {}
 
-    public EquipeResponse(Equipe equipe) {
+    public EquipeResponse(Equipe equipe, int nombreMembres) {
         this.id = equipe.getId();
         this.nom = equipe.getNom();
+        this.nombreMembres = nombreMembres;
+
         if (equipe.getChef() != null) {
             this.chefId = equipe.getChef().getId();
             this.chefNom = equipe.getChef().getNom();
         }
-        this.nombreMembres = equipe.getMembres() != null ? equipe.getMembres().size() : 0;
-
         // Log pour debug
         System.out.println("EquipeResponse créée: " + this.nom +
                 ", chefId: " + this.chefId +

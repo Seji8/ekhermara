@@ -22,7 +22,7 @@ public class    PfeApplication {
     }
     @Bean
     CommandLineRunner seedAdmin(UserRepository userRepository, PasswordEncoder encoder) {
-        return args -> {
+          return args -> {
             final String email = "admin@example.com";
             if (userRepository.findByEmail(email).isEmpty()) {
                 User admin = new User();

@@ -1,10 +1,13 @@
 package com.example.pfe.services;
 
 import com.example.pfe.dto.DemandeTeletravailResponse;
+import com.example.pfe.dto.PolitiqueResponse;
 import com.example.pfe.dto.TaskDto;
 import com.example.pfe.models.*;
 import com.example.pfe.repository.DemandeTeletravailRepository;
 import com.example.pfe.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.camunda.bpm.engine.HistoryService;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.TaskService;
@@ -24,6 +27,7 @@ import java.util.stream.Collectors;
 @Transactional
 public class CamundaProcessService {
 
+    @Autowired private PolitiqueTeletravailService politiqueService;
     @Autowired private RuntimeService runtimeService;
     @Autowired private TaskService taskService;
     @Autowired private HistoryService historyService;
@@ -31,12 +35,23 @@ public class CamundaProcessService {
     @Autowired private UserRepository userRepository;
     @Autowired private FileStorageService fileStorageService;
     @Autowired private WebSocketNotificationService notificationService;
+    @PersistenceContext private EntityManager entityManager;
 
     // ==================== DEMANDES ====================
 
     public Map<String, Object> createDemandeWithProcess(String motif, String dateDebut,
                                                         String dateFin, String type,
                                                         MultipartFile fichier, User employe) {
+        Map<String, Object> dispo = politiqueService.verifierDisponibilite(
+                employe,
+                LocalDateTime.parse(dateDebut),
+                LocalDateTime.parse(dateFin));
+
+        Boolean autorise = (Boolean) dispo.get("autorise");
+        if (autorise != null && !autorise) {
+            System.out.println("⚠️ Politique dépassée mais demande autorisée avec warning");
+        }
+
         DemandeTeletravail demande = new DemandeTeletravail();
         demande.setMotif(motif);
         demande.setDateDebut(LocalDateTime.parse(dateDebut));
@@ -73,7 +88,6 @@ public class CamundaProcessService {
         savedDemande.setProcessInstanceId(processInstance.getId());
         demandeRepository.save(savedDemande);
 
-        // ✅ Notifier chef + admin + RH
         notificationService.notifierNouvelleDemande(savedDemande, employe);
 
         Map<String, Object> result = new HashMap<>();
@@ -242,37 +256,41 @@ public class CamundaProcessService {
         String processInstanceId = task.getProcessInstanceId();
         Long demandeId = (Long) runtimeService.getVariable(processInstanceId, "demandeId");
 
-        // Déjà traitée
-        Optional<DemandeTeletravail> demandeOpt = demandeRepository.findById(demandeId);
-        if (demandeOpt.isPresent() && demandeOpt.get().getStatut() != StatutDemande.PENDING) {
-            taskService.complete(taskId, Map.of("chefApprouve", true, "adminApprouve", true));
-            return;
-        }
+        DemandeTeletravail demande = demandeRepository.findById(demandeId)
+                .orElseThrow(() -> new RuntimeException("Demande introuvable"));
 
-        // Compléter la tâche courante
+        // 1. UPDATE + FLUSH immédiat en DB
+        demande.setStatut(StatutDemande.APPROVED);
+        demande.setValidateur(validateur);
+        demandeRepository.saveAndFlush(demande);
+
+        // 2. Vider le cache Hibernate
+        entityManager.clear();
+
+        // 3. Compléter la tâche Camunda
         Map<String, Object> variables = new HashMap<>();
         variables.put("chefApprouve", true);
         variables.put("adminApprouve", true);
-        if (task.getTaskDefinitionKey().equals("ChefValidation")) {
+        if ("ChefValidation".equals(task.getTaskDefinitionKey())) {
             variables.put("chefCommentaire", commentaire != null ? commentaire : "");
         } else {
             variables.put("adminCommentaire", commentaire != null ? commentaire : "");
         }
         taskService.complete(taskId, variables);
 
-        // Compléter les tâches restantes
+        // 4. Compléter les tâches restantes
         taskService.createTaskQuery()
                 .processInstanceId(processInstanceId).active().list()
                 .forEach(t -> taskService.complete(t.getId(),
                         Map.of("chefApprouve", true, "adminApprouve", true)));
 
-        // ✅ Sauvegarder statut + notifier tout le monde
-        demandeRepository.findById(demandeId).ifPresent(demande -> {
-            demande.setStatut(StatutDemande.APPROVED);
-            demande.setValidateur(validateur);
-            demandeRepository.save(demande);
-            notificationService.notifierDecision(demande, "APPROVED", commentaire);
-        });
+        // 5. Score recalculé sur données fraîches
+        Map<String, Object> score = calculerScore(demandeId);
+        System.out.println("📊 Score après APPROVE: " + score);
+
+        // 6. Notification (re-fetch car entityManager.clear() détache l'entité)
+        DemandeTeletravail demandeRefresh = demandeRepository.findById(demandeId).orElseThrow();
+        notificationService.notifierDecision(demandeRefresh, "APPROVED", commentaire);
     }
 
     public void rejeterTache(String taskId, User validateur, String commentaire) {
@@ -282,37 +300,37 @@ public class CamundaProcessService {
         String processInstanceId = task.getProcessInstanceId();
         Long demandeId = (Long) runtimeService.getVariable(processInstanceId, "demandeId");
 
-        // Déjà traitée
-        Optional<DemandeTeletravail> demandeOpt = demandeRepository.findById(demandeId);
-        if (demandeOpt.isPresent() && demandeOpt.get().getStatut() != StatutDemande.PENDING) {
-            taskService.complete(taskId, Map.of("chefApprouve", false, "adminApprouve", false));
-            return;
-        }
+        DemandeTeletravail demande = demandeRepository.findById(demandeId)
+                .orElseThrow(() -> new RuntimeException("Demande introuvable"));
 
-        // Compléter la tâche courante
+        // 1. UPDATE + FLUSH
+        demande.setStatut(StatutDemande.REJECTED);
+        demande.setValidateur(validateur);
+        demande.setMotifRejet(commentaire != null ? commentaire : "");
+        demandeRepository.saveAndFlush(demande);
+
+        // 2. Vider le cache Hibernate
+        entityManager.clear();
+
+        // 3. Compléter la tâche
         Map<String, Object> variables = new HashMap<>();
         variables.put("chefApprouve", false);
         variables.put("adminApprouve", false);
-        if (task.getTaskDefinitionKey().equals("ChefValidation")) {
-            variables.put("chefCommentaire", commentaire != null ? commentaire : "");
-        } else {
-            variables.put("adminCommentaire", commentaire != null ? commentaire : "");
-        }
-        taskService.complete(taskId, variables);// Compléter les tâches restantes
+        taskService.complete(taskId, variables);
+
+        // 4. Tâches restantes
         taskService.createTaskQuery()
                 .processInstanceId(processInstanceId).active().list()
                 .forEach(t -> taskService.complete(t.getId(),
                         Map.of("chefApprouve", false, "adminApprouve", false)));
 
-        // ✅ Sauvegarder statut + notifier tout le monde
-        demandeRepository.findById(demandeId).ifPresent(demande -> {
-            demande.setStatut(StatutDemande.REJECTED);
-            demande.setValidateur(validateur);
-            demande.setMotifRejet(commentaire != null ? commentaire : "");
-            demandeRepository.save(demande);
+        // 5. Score recalculé
+        Map<String, Object> score = calculerScore(demandeId);
+        System.out.println("📊 Score après REJECT: " + score);
 
-            notificationService.notifierDecision(demande, "REJECTED", commentaire);
-        });
+        // 6. Notification
+        DemandeTeletravail demandeRefresh = demandeRepository.findById(demandeId).orElseThrow();
+        notificationService.notifierDecision(demandeRefresh, "REJECTED", commentaire);
     }
 
     // ==================== STATISTIQUES ====================
@@ -340,74 +358,106 @@ public class CamundaProcessService {
     }
 
     // ==================== SCORING ====================
-
     public Map<String, Object> calculerScore(Long demandeId) {
+
+        // Force DB read — bypass ALL Hibernate caches
+        entityManager.clear();
+
         DemandeTeletravail demande = demandeRepository.findById(demandeId)
                 .orElseThrow(() -> new RuntimeException("Demande non trouvée"));
+
+        System.out.println("=== CALCUL SCORE ===");
+        System.out.println("Demande ID: " + demandeId + " | Statut: " + demande.getStatut());
 
         User utilisateur = demande.getUtilisateur();
         Equipe equipe = utilisateur.getEquipe();
 
-        if (equipe == null) return buildScore(100, 0, 0);
+        if (equipe == null || demande.getDateDebut() == null || demande.getDateFin() == null)
+            return buildScore(100, 0, 0, 1, 60);
 
-        List<User> membres = equipe.getMembres().stream()
-                .filter(m -> !m.getId().equals(utilisateur.getId()))
-                .collect(Collectors.toList());
+        int tailleEquipe = userRepository.countByEquipeId(equipe.getId());
+        if (tailleEquipe == 0) return buildScore(100, 0, 0, 1, 60);
 
-        int tailleEquipe = membres.size();
-        if (tailleEquipe == 0) return buildScore(0, 0, 0);
+        // ── Politique ──
+        int pourcentageSurSite = 60;
+        PolitiqueResponse politique = politiqueService.getPolitique(
+                equipe,
+                demande.getDateDebut().getYear(),
+                demande.getDateDebut().getMonthValue());
+        if (politique != null) pourcentageSurSite = politique.getPourcentageMaxSurSite();
 
-        if (demande.getDateDebut() == null || demande.getDateFin() == null) {
-            return buildScore(0, 0, tailleEquipe);
-        }
+        // ── Quota ──
+        int maxAutoriseTeletravail = (int) Math.floor(
+                tailleEquipe * (100.0 - pourcentageSurSite) / 100.0);
+        if (maxAutoriseTeletravail == 0 && pourcentageSurSite < 100) maxAutoriseTeletravail = 1;
 
-        List<Long> membreIds = membres.stream()
-                .map(User::getId)
-                .collect(Collectors.toList());
+        System.out.println("Politique: " + pourcentageSurSite + "% sur site | max télétravail: " + maxAutoriseTeletravail);
 
-        long chevauchements = demandeRepository.findByUtilisateurIdIn(membreIds).stream()
-                .filter(d -> StatutDemande.APPROVED.equals(d.getStatut()))
-                .filter(d -> d.getDateDebut() != null && d.getDateFin() != null)
+        // ── Members IDs direct from DB ──
+        List<Long> membreIds = userRepository.findIdsByEquipeId(equipe.getId());
+        System.out.println("membreIds: " + membreIds);
+
+        // ✅ Native query — bypasses Hibernate 1st AND 2nd level cache completely
+        List<DemandeTeletravail> approvedDemandes =
+                demandeRepository.findApprovedByMembreIds(membreIds);
+
+        System.out.println("Demandes APPROVED depuis native query: " + approvedDemandes.size());
+        approvedDemandes.forEach(d ->
+                System.out.println("  ID:" + d.getId()
+                        + " statut:" + d.getStatut()
+                        + " user:" + d.getUtilisateur().getId()
+                        + " debut:" + d.getDateDebut()
+                        + " fin:" + d.getDateFin())
+        );
+
+        // ── Count overlapping with requested period ──
+        long chevauchements = approvedDemandes.stream()
                 .filter(d -> !d.getDateDebut().isAfter(demande.getDateFin())
                         && !d.getDateFin().isBefore(demande.getDateDebut()))
                 .map(d -> d.getUtilisateur().getId())
                 .distinct()
                 .count();
-        int score;
 
-        if (tailleEquipe == 0) {
-            score = 100;
-        } else {
-            double ratio = (chevauchements * 100.0) / tailleEquipe;
+        System.out.println("Chevauchements: " + chevauchements + " / max autorisé: " + maxAutoriseTeletravail);
 
-            score = (int) Math.round(100 - ratio);
-        }
-        return buildScore(score, chevauchements, tailleEquipe);
+        // ── Score ──
+        int score = maxAutoriseTeletravail == 0 ? 0
+                : (int) Math.max(0, Math.round(100.0 - (chevauchements * 100.0) / maxAutoriseTeletravail));
+
+        System.out.println("Score final: " + score + "%");
+
+        return buildScore(score, chevauchements, tailleEquipe, maxAutoriseTeletravail, pourcentageSurSite);
     }
-
-    private Map<String, Object> buildScore(int score, long chevauchements, int tailleEquipe) {
-
+    // ── buildScore : pourcentageSurSite passé en paramètre, plus d'erreur de compilation ──
+    private Map<String, Object> buildScore(int score,
+                                           long chevauchements,
+                                           int tailleEquipe,
+                                           int maxAutoriseTeletravail,
+                                           int pourcentageSurSite) {
+        // Niveau basé sur l'utilisation du quota
         String niveau;
         String label;
 
-        if (score >= 80) {
+        if (chevauchements == 0) {
             niveau = "low";
-            label = "Disponibilité élevée";
-        } else if (score >= 50) {
+            label  = "Quota disponible";
+        } else if (chevauchements < maxAutoriseTeletravail) {
             niveau = "medium";
-            label = "Disponibilité moyenne";
+            label  = "Quota partiellement utilisé";
         } else {
             niveau = "high";
-            label = "Disponibilité faible";
+            label  = "Quota atteint — Risque élevé";
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("score", score);
-        result.put("label", label);
-        result.put("niveau", niveau);
+        result.put("score",                   score);
+        result.put("label",                   label);
+        result.put("niveau",                  niveau);
         result.put("demandesEnChevauchement", chevauchements);
-        result.put("tailleEquipe", tailleEquipe);
-
+        result.put("tailleEquipe",            tailleEquipe);
+        result.put("maxAutoriseTeletravail",  maxAutoriseTeletravail);
+        result.put("pourcentageSurSite",      pourcentageSurSite);
+        result.put("pourcentageTeletravailMax", 100 - pourcentageSurSite);
         return result;
     }
 
@@ -452,7 +502,6 @@ public class CamundaProcessService {
                 response.setUtilisateurEquipe(demande.getUtilisateur().getEquipe().getNom());
             }
         }
-
         return response;
     }
 }
