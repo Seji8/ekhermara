@@ -17,10 +17,11 @@ public class EquipeService {
 
     private final EquipeRepository equipeRepository;
     private final UserRepository userRepository;
-
-    public EquipeService(EquipeRepository equipeRepository, UserRepository userRepository) {
+    private final AuditService auditService;
+    public EquipeService(EquipeRepository equipeRepository, UserRepository userRepository, AuditService auditService) {
         this.equipeRepository = equipeRepository;
         this.userRepository = userRepository;
+        this.auditService = auditService;
     }
 
     // ===================== GET ALL =====================
@@ -77,6 +78,7 @@ public class EquipeService {
         }
 
         Equipe saved = equipeRepository.save(equipe);
+        auditService.log("CREATE_EQUIPE", null, "Équipe créée: " + saved.getNom());
 
         int nombreMembres = 0;
 
@@ -126,6 +128,7 @@ public class EquipeService {
         }
 
         Equipe updated = equipeRepository.save(equipe);
+        auditService.log("UPDATE_EQUIPE", null, "Équipe modifiée: " + updated.getNom());
 
         int nombreMembres = userRepository.countByEquipeId(updated.getId());
 
@@ -155,5 +158,7 @@ public class EquipeService {
         }
 
         equipeRepository.delete(equipe);
+        auditService.log("DELETE_EQUIPE", null, "Équipe supprimée: " + equipe.getNom());
+
     }
 }

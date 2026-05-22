@@ -31,6 +31,8 @@ public class DemandeTeletravailService {
     private final UserRepository userRepository;
     private final ValidationRepository validationRepository;
     private final ValidationService validationService;
+    private final AuditService auditService;
+
 
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;
@@ -38,11 +40,12 @@ public class DemandeTeletravailService {
     public DemandeTeletravailService(DemandeTeletravailRepository demandeRepository,
                                      UserRepository userRepository,
                                      ValidationRepository validationRepository,
-                                     ValidationService validationService) {
+                                     ValidationService validationService, AuditService auditService) {
         this.demandeRepository = demandeRepository;
         this.userRepository = userRepository;
         this.validationRepository = validationRepository;
         this.validationService = validationService;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -66,6 +69,7 @@ public class DemandeTeletravailService {
         }
 
         DemandeTeletravail savedDemande = demandeRepository.save(demande);
+        auditService.log("CREATE_DEMANDE", utilisateur, "Demande créée par: " + utilisateur.getNom());
         return mapToResponse(savedDemande);
     }
 
@@ -108,6 +112,7 @@ public class DemandeTeletravailService {
                 .orElseThrow(() -> new RuntimeException("Validateur non trouvé"));
 
         validationService.ajouterValidation(id, validateur, StatutDemande.APPROVED, null);
+        auditService.log("APPROVE_DEMANDE", validateur, "Demande #" + id + " approuvée par: " + validateur.getNom());
 
         DemandeTeletravail updatedDemande = demandeRepository.findById(id).orElseThrow();
         return mapToResponse(updatedDemande);
@@ -122,6 +127,7 @@ public class DemandeTeletravailService {
                 .orElseThrow(() -> new RuntimeException("Validateur non trouvé"));
 
         validationService.ajouterValidation(id, validateur, StatutDemande.REJECTED, null);
+        auditService.log("REJECT_DEMANDE", validateur, "Demande #" + id + " refusée par: " + validateur.getNom());
 
         DemandeTeletravail updatedDemande = demandeRepository.findById(id).orElseThrow();
         return mapToResponse(updatedDemande);

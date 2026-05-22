@@ -1,202 +1,202 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
-  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
-  id="Definitions_1"
-  targetNamespace="http://bpmn.io/schema/bpmn">
+    <?xml version="1.0" encoding="UTF-8"?>
+    <bpmn:definitions
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+      xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+      xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+      xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+      xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+      id="Definitions_1"
+      targetNamespace="http://bpmn.io/schema/bpmn">
 
-  <bpmn:process id="validation-teletravail-v2"
-                name="Validation Télétravail V2"
-                isExecutable="true"
-                camunda:historyTimeToLive="30">
+      <bpmn:process id="validation-teletravail-v2"
+                    name="Validation Télétravail V2"
+                    isExecutable="true"
+                    camunda:historyTimeToLive="30">
 
-    <bpmn:startEvent id="StartEvent_1" name="Demande soumise">
-      <bpmn:outgoing>flow1</bpmn:outgoing>
-    </bpmn:startEvent>
+        <bpmn:startEvent id="StartEvent_1" name="Demande soumise">
+          <bpmn:outgoing>flow1</bpmn:outgoing>
+        </bpmn:startEvent>
+    
+        <!-- Parallel split: send to BOTH chef and admin simultaneously -->
+        <bpmn:parallelGateway id="Gateway_Parallel_Split" name="Envoi parallèle">
+          <bpmn:incoming>flow1</bpmn:incoming>
+          <bpmn:outgoing>flow2</bpmn:outgoing>
+          <bpmn:outgoing>flow3</bpmn:outgoing>
+        </bpmn:parallelGateway>
 
-    <!-- Parallel split: send to BOTH chef and admin simultaneously -->
-    <bpmn:parallelGateway id="Gateway_Parallel_Split" name="Envoi parallèle">
-      <bpmn:incoming>flow1</bpmn:incoming>
-      <bpmn:outgoing>flow2</bpmn:outgoing>
-      <bpmn:outgoing>flow3</bpmn:outgoing>
-    </bpmn:parallelGateway>
+        <bpmn:userTask id="ChefValidation" name="Validation Chef"
+                       camunda:assignee="${chefEmail}">
+          <bpmn:extensionElements>
+            <camunda:formData>
+              <camunda:formField id="chefApprouve" label="Décision Chef" type="boolean"/>
+              <camunda:formField id="chefCommentaire" label="Commentaire" type="string"/>
+            </camunda:formData>
+          </bpmn:extensionElements>
+          <bpmn:incoming>flow2</bpmn:incoming>
+          <bpmn:outgoing>flow4</bpmn:outgoing>
+        </bpmn:userTask>
 
-    <bpmn:userTask id="ChefValidation" name="Validation Chef"
-                   camunda:assignee="${chefEmail}">
-      <bpmn:extensionElements>
-        <camunda:formData>
-          <camunda:formField id="chefApprouve" label="Décision Chef" type="boolean"/>
-          <camunda:formField id="chefCommentaire" label="Commentaire" type="string"/>
-        </camunda:formData>
-      </bpmn:extensionElements>
-      <bpmn:incoming>flow2</bpmn:incoming>
-      <bpmn:outgoing>flow4</bpmn:outgoing>
-    </bpmn:userTask>
+        <bpmn:userTask id="AdminValidation" name="Validation Admin"
+                       camunda:assignee="${adminEmail}">
+          <bpmn:extensionElements>
+            <camunda:formData>
+              <camunda:formField id="adminApprouve" label="Décision Admin" type="boolean"/>
+              <camunda:formField id="adminCommentaire" label="Commentaire" type="string"/>
+            </camunda:formData>
+          </bpmn:extensionElements>
+          <bpmn:incoming>flow3</bpmn:incoming>
+          <bpmn:outgoing>flow5</bpmn:outgoing>
+        </bpmn:userTask>
 
-    <bpmn:userTask id="AdminValidation" name="Validation Admin"
-                   camunda:assignee="${adminEmail}">
-      <bpmn:extensionElements>
-        <camunda:formData>
-          <camunda:formField id="adminApprouve" label="Décision Admin" type="boolean"/>
-          <camunda:formField id="adminCommentaire" label="Commentaire" type="string"/>
-        </camunda:formData>
-      </bpmn:extensionElements>
-      <bpmn:incoming>flow3</bpmn:incoming>
-      <bpmn:outgoing>flow5</bpmn:outgoing>
-    </bpmn:userTask>
+        <!-- Inclusive gateway: proceed when ANY one responds -->
+        <bpmn:inclusiveGateway id="Gateway_Join" name="Premier qui répond">
+          <bpmn:incoming>flow4</bpmn:incoming>
+          <bpmn:incoming>flow5</bpmn:incoming>
+          <bpmn:outgoing>flow6</bpmn:outgoing>
+        </bpmn:inclusiveGateway>
 
-    <!-- Inclusive gateway: proceed when ANY one responds -->
-    <bpmn:inclusiveGateway id="Gateway_Join" name="Premier qui répond">
-      <bpmn:incoming>flow4</bpmn:incoming>
-      <bpmn:incoming>flow5</bpmn:incoming>
-      <bpmn:outgoing>flow6</bpmn:outgoing>
-    </bpmn:inclusiveGateway>
+        <bpmn:exclusiveGateway id="Gateway_Decision" name="Décision finale" default="flow_refuse">
+          <bpmn:incoming>flow6</bpmn:incoming>
+          <bpmn:outgoing>flow_accept</bpmn:outgoing>
+          <bpmn:outgoing>flow_refuse</bpmn:outgoing>
+        </bpmn:exclusiveGateway>
 
-    <bpmn:exclusiveGateway id="Gateway_Decision" name="Décision finale" default="flow_refuse">
-      <bpmn:incoming>flow6</bpmn:incoming>
-      <bpmn:outgoing>flow_accept</bpmn:outgoing>
-      <bpmn:outgoing>flow_refuse</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
+        <bpmn:endEvent id="End_Accept" name="Approuvée">
+          <bpmn:incoming>flow_accept</bpmn:incoming>
+        </bpmn:endEvent>
 
-    <bpmn:endEvent id="End_Accept" name="Approuvée">
-      <bpmn:incoming>flow_accept</bpmn:incoming>
-    </bpmn:endEvent>
+        <bpmn:endEvent id="End_Refuse" name="Refusée">
+          <bpmn:incoming>flow_refuse</bpmn:incoming>
+        </bpmn:endEvent>
 
-    <bpmn:endEvent id="End_Refuse" name="Refusée">
-      <bpmn:incoming>flow_refuse</bpmn:incoming>
-    </bpmn:endEvent>
+        <bpmn:sequenceFlow id="flow1" sourceRef="StartEvent_1" targetRef="Gateway_Parallel_Split"/>
+        <bpmn:sequenceFlow id="flow2" sourceRef="Gateway_Parallel_Split" targetRef="ChefValidation"/>
+        <bpmn:sequenceFlow id="flow3" sourceRef="Gateway_Parallel_Split" targetRef="AdminValidation"/>
+        <bpmn:sequenceFlow id="flow4" sourceRef="ChefValidation" targetRef="Gateway_Join"/>
+        <bpmn:sequenceFlow id="flow5" sourceRef="AdminValidation" targetRef="Gateway_Join"/>
+        <bpmn:sequenceFlow id="flow6" sourceRef="Gateway_Join" targetRef="Gateway_Decision"/>
 
-    <bpmn:sequenceFlow id="flow1" sourceRef="StartEvent_1" targetRef="Gateway_Parallel_Split"/>
-    <bpmn:sequenceFlow id="flow2" sourceRef="Gateway_Parallel_Split" targetRef="ChefValidation"/>
-    <bpmn:sequenceFlow id="flow3" sourceRef="Gateway_Parallel_Split" targetRef="AdminValidation"/>
-    <bpmn:sequenceFlow id="flow4" sourceRef="ChefValidation" targetRef="Gateway_Join"/>
-    <bpmn:sequenceFlow id="flow5" sourceRef="AdminValidation" targetRef="Gateway_Join"/>
-    <bpmn:sequenceFlow id="flow6" sourceRef="Gateway_Join" targetRef="Gateway_Decision"/>
+        <bpmn:sequenceFlow id="flow_accept" name="Approuver"
+                           sourceRef="Gateway_Decision" targetRef="End_Accept">
+          <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
+            <![CDATA[${chefApprouve == true || adminApprouve == true}]]>
+          </bpmn:conditionExpression>
+        </bpmn:sequenceFlow>
 
-    <bpmn:sequenceFlow id="flow_accept" name="Approuver"
-                       sourceRef="Gateway_Decision" targetRef="End_Accept">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
-        <![CDATA[${chefApprouve == true || adminApprouve == true}]]>
-      </bpmn:conditionExpression>
-    </bpmn:sequenceFlow>
+        <bpmn:sequenceFlow id="flow_refuse" name="Refuser"
+                           sourceRef="Gateway_Decision" targetRef="End_Refuse"/>
 
-    <bpmn:sequenceFlow id="flow_refuse" name="Refuser"
-                       sourceRef="Gateway_Decision" targetRef="End_Refuse"/>
+      </bpmn:process>
 
-  </bpmn:process>
+      <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+        <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="validation-teletravail-v2">
 
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="validation-teletravail-v2">
+          <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+            <dc:Bounds x="152" y="182" width="36" height="36"/>
+            <bpmndi:BPMNLabel>
+              <dc:Bounds x="130" y="225" width="80" height="14"/>
+            </bpmndi:BPMNLabel>
+          </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="152" y="182" width="36" height="36"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="130" y="225" width="80" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
+          <bpmndi:BPMNShape id="Gateway_Parallel_Split_di" bpmnElement="Gateway_Parallel_Split" isMarkerVisible="true">
+            <dc:Bounds x="255" y="175" width="50" height="50"/>
+            <bpmndi:BPMNLabel>
+              <dc:Bounds x="238" y="232" width="84" height="14"/>
+            </bpmndi:BPMNLabel>
+          </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="Gateway_Parallel_Split_di" bpmnElement="Gateway_Parallel_Split" isMarkerVisible="true">
-        <dc:Bounds x="255" y="175" width="50" height="50"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="238" y="232" width="84" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
+          <bpmndi:BPMNShape id="ChefValidation_di" bpmnElement="ChefValidation">
+            <dc:Bounds x="370" y="80" width="120" height="80"/>
+            <bpmndi:BPMNLabel/>
+          </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="ChefValidation_di" bpmnElement="ChefValidation">
-        <dc:Bounds x="370" y="80" width="120" height="80"/>
-        <bpmndi:BPMNLabel/>
-      </bpmndi:BPMNShape>
+          <bpmndi:BPMNShape id="AdminValidation_di" bpmnElement="AdminValidation">
+            <dc:Bounds x="370" y="240" width="120" height="80"/>
+            <bpmndi:BPMNLabel/>
+          </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="AdminValidation_di" bpmnElement="AdminValidation">
-        <dc:Bounds x="370" y="240" width="120" height="80"/>
-        <bpmndi:BPMNLabel/>
-      </bpmndi:BPMNShape>
+          <bpmndi:BPMNShape id="Gateway_Join_di" bpmnElement="Gateway_Join" isMarkerVisible="true">
+            <dc:Bounds x="555" y="175" width="50" height="50"/>
+            <bpmndi:BPMNLabel>
+              <dc:Bounds x="535" y="232" width="90" height="14"/>
+            </bpmndi:BPMNLabel>
+          </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="Gateway_Join_di" bpmnElement="Gateway_Join" isMarkerVisible="true">
-        <dc:Bounds x="555" y="175" width="50" height="50"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="535" y="232" width="90" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
+          <bpmndi:BPMNShape id="Gateway_Decision_di" bpmnElement="Gateway_Decision" isMarkerVisible="true">
+            <dc:Bounds x="675" y="175" width="50" height="50"/>
+            <bpmndi:BPMNLabel>
+              <dc:Bounds x="658" y="232" width="84" height="14"/>
+            </bpmndi:BPMNLabel>
+          </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="Gateway_Decision_di" bpmnElement="Gateway_Decision" isMarkerVisible="true">
-        <dc:Bounds x="675" y="175" width="50" height="50"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="658" y="232" width="84" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
+          <bpmndi:BPMNShape id="End_Accept_di" bpmnElement="End_Accept">
+            <dc:Bounds x="792" y="102" width="36" height="36"/>
+            <bpmndi:BPMNLabel>
+              <dc:Bounds x="784" y="145" width="52" height="14"/>
+            </bpmndi:BPMNLabel>
+          </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="End_Accept_di" bpmnElement="End_Accept">
-        <dc:Bounds x="792" y="102" width="36" height="36"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="784" y="145" width="52" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
+          <bpmndi:BPMNShape id="End_Refuse_di" bpmnElement="End_Refuse">
+            <dc:Bounds x="792" y="262" width="36" height="36"/>
+            <bpmndi:BPMNLabel>
+              <dc:Bounds x="788" y="305" width="44" height="14"/>
+            </bpmndi:BPMNLabel>
+          </bpmndi:BPMNShape>
 
-      <bpmndi:BPMNShape id="End_Refuse_di" bpmnElement="End_Refuse">
-        <dc:Bounds x="792" y="262" width="36" height="36"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="788" y="305" width="44" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
+          <bpmndi:BPMNEdge id="flow1_di" bpmnElement="flow1">
+            <di:waypoint x="188" y="200"/>
+            <di:waypoint x="255" y="200"/>
+          </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="flow1_di" bpmnElement="flow1">
-        <di:waypoint x="188" y="200"/>
-        <di:waypoint x="255" y="200"/>
-      </bpmndi:BPMNEdge>
+          <bpmndi:BPMNEdge id="flow2_di" bpmnElement="flow2">
+            <di:waypoint x="280" y="175"/>
+            <di:waypoint x="280" y="120"/>
+            <di:waypoint x="370" y="120"/>
+          </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="flow2_di" bpmnElement="flow2">
-        <di:waypoint x="280" y="175"/>
-        <di:waypoint x="280" y="120"/>
-        <di:waypoint x="370" y="120"/>
-      </bpmndi:BPMNEdge>
+          <bpmndi:BPMNEdge id="flow3_di" bpmnElement="flow3">
+            <di:waypoint x="280" y="225"/>
+            <di:waypoint x="280" y="280"/>
+            <di:waypoint x="370" y="280"/>
+          </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="flow3_di" bpmnElement="flow3">
-        <di:waypoint x="280" y="225"/>
-        <di:waypoint x="280" y="280"/>
-        <di:waypoint x="370" y="280"/>
-      </bpmndi:BPMNEdge>
+          <bpmndi:BPMNEdge id="flow4_di" bpmnElement="flow4">
+            <di:waypoint x="490" y="120"/>
+            <di:waypoint x="580" y="120"/>
+            <di:waypoint x="580" y="175"/>
+          </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="flow4_di" bpmnElement="flow4">
-        <di:waypoint x="490" y="120"/>
-        <di:waypoint x="580" y="120"/>
-        <di:waypoint x="580" y="175"/>
-      </bpmndi:BPMNEdge>
+          <bpmndi:BPMNEdge id="flow5_di" bpmnElement="flow5">
+            <di:waypoint x="490" y="280"/>
+            <di:waypoint x="580" y="280"/>
+            <di:waypoint x="580" y="225"/>
+          </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="flow5_di" bpmnElement="flow5">
-        <di:waypoint x="490" y="280"/>
-        <di:waypoint x="580" y="280"/>
-        <di:waypoint x="580" y="225"/>
-      </bpmndi:BPMNEdge>
+          <bpmndi:BPMNEdge id="flow6_di" bpmnElement="flow6">
+            <di:waypoint x="605" y="200"/>
+            <di:waypoint x="675" y="200"/>
+          </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="flow6_di" bpmnElement="flow6">
-        <di:waypoint x="605" y="200"/>
-        <di:waypoint x="675" y="200"/>
-      </bpmndi:BPMNEdge>
+          <bpmndi:BPMNEdge id="flow_accept_di" bpmnElement="flow_accept">
+            <di:waypoint x="700" y="175"/>
+            <di:waypoint x="700" y="120"/>
+            <di:waypoint x="792" y="120"/>
+            <bpmndi:BPMNLabel>
+              <dc:Bounds x="726" y="102" width="46" height="14"/>
+            </bpmndi:BPMNLabel>
+          </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="flow_accept_di" bpmnElement="flow_accept">
-        <di:waypoint x="700" y="175"/>
-        <di:waypoint x="700" y="120"/>
-        <di:waypoint x="792" y="120"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="726" y="102" width="46" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
+          <bpmndi:BPMNEdge id="flow_refuse_di" bpmnElement="flow_refuse">
+            <di:waypoint x="700" y="225"/>
+            <di:waypoint x="700" y="280"/>
+            <di:waypoint x="792" y="280"/>
+            <bpmndi:BPMNLabel>
+              <dc:Bounds x="726" y="262" width="38" height="14"/>
+            </bpmndi:BPMNLabel>
+          </bpmndi:BPMNEdge>
 
-      <bpmndi:BPMNEdge id="flow_refuse_di" bpmnElement="flow_refuse">
-        <di:waypoint x="700" y="225"/>
-        <di:waypoint x="700" y="280"/>
-        <di:waypoint x="792" y="280"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="726" y="262" width="38" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
+        </bpmndi:BPMNPlane>
+      </bpmndi:BPMNDiagram>
 
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-
-</bpmn:definitions>
+    </bpmn:definitions>

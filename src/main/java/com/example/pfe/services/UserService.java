@@ -26,6 +26,8 @@ public class UserService {
     private final EquipeRepository equipeRepository;
     private final EmailService emailService;
     private final DemandeTeletravailRepository demandeTeletravailRepository;
+    private final AuditService auditService;
+
 
     // Character sets for password generation
     private static final String UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -37,12 +39,13 @@ public class UserService {
 
     public UserService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
-                       EmailService emailService, EquipeRepository equipeRepository, DemandeTeletravailRepository demandeTeletravailRepository) {
+                       EmailService emailService, EquipeRepository equipeRepository, DemandeTeletravailRepository demandeTeletravailRepository, AuditService auditService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.equipeRepository = equipeRepository;
         this.demandeTeletravailRepository = demandeTeletravailRepository;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -85,6 +88,7 @@ public class UserService {
         }
 
         User savedUser = userRepository.save(user);
+        auditService.log("CREATE_USER", savedUser, "Utilisateur créé: " + savedUser.getEmail());
         System.out.println("🔍 Utilisateur sauvegardé: " + savedUser.getNom() + ", Role: " + savedUser.getRole());
         System.out.println("🔍 Est chef? " + savedUser.estChef());
         System.out.println("🔍 AssignedEquipe est null? " + (assignedEquipe == null));
@@ -230,6 +234,7 @@ public class UserService {
         }
 
         User updatedUser = userRepository.save(user);
+        auditService.log("UPDATE_USER", updatedUser, "Utilisateur modifié: " + updatedUser.getEmail());
 
         // Gérer la relation chef-équipe
         if (updatedUser.estChef() && updatedUser.getEquipe() != null) {
@@ -289,6 +294,8 @@ public class UserService {
 
         // 4. Supprimer l'utilisateur
         userRepository.deleteById(id);
+        auditService.log("DELETE_USER", user, "Utilisateur supprimé: " + user.getEmail());
+
         System.out.println("✅ Utilisateur supprimé avec succès: " + user.getNom());
     }
     @Transactional

@@ -22,7 +22,8 @@ public class AuditService {
     /**
      * Log an action performed on/by a user.
      *
-     * @param action  e.g. "CREATE_USER", "UPDATE_USER", "DELETE_USER", "LOGIN", "DEMANDE_APPROVED"
+     * @param action  e.g. "CREATE_USER", "UPDATE_USER", "DELETE_USER",
+     *                     "CREATE_DEMANDE", "APPROVE_DEMANDE", "REJECT_DEMANDE"
      * @param user    the user the action concerns (can be null for system actions)
      * @param details free-text description
      */
@@ -31,17 +32,31 @@ public class AuditService {
         entry.setAction(action);
         entry.setUser(user);
         entry.setDetails(details);
+        // date is set automatically via @PrePersist in AuditLog entity
         auditLogRepository.save(entry);
     }
 
+    /** Return all logs ordered newest-first. */
     public List<AuditLogResponse> getAll() {
         return auditLogRepository.findAllByOrderByDateDesc()
-                .stream().map(AuditLogResponse::new).collect(Collectors.toList());
+                .stream()
+                .map(AuditLogResponse::new)
+                .collect(Collectors.toList());
     }
 
-    public List<AuditLogResponse> getFiltered(String action, Long userId,
-                                               LocalDateTime from, LocalDateTime to) {
+    /**
+     * Return filtered logs.
+     * Any null parameter is ignored — the query will not filter by it.
+     */
+    public List<AuditLogResponse> getFiltered(
+            String action,
+            Long userId,
+            LocalDateTime from,
+            LocalDateTime to) {
+
         return auditLogRepository.findFiltered(action, userId, from, to)
-                .stream().map(AuditLogResponse::new).collect(Collectors.toList());
+                .stream()
+                .map(AuditLogResponse::new)
+                .collect(Collectors.toList());
     }
 }
